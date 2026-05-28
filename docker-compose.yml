@@ -49,11 +49,11 @@ services:
     privileged: true
     volumes:
       - /tmp/argus_socket:/tmp/argus_socket
-      - sparkler_runs:/app/sparkler/runs
+      - sparkler_runs:/app/sparklers_anpr/runs
       - sparkler_models:/opt/models
       # Optional: persist config.yaml across image upgrades.  Comment
       # out if you'd rather the image's defaults always win.
-      - sparkler_config:/app/sparkler/config
+      - sparkler_config:/app/sparklers_anpr/config
 
     # USB webcams — list each /dev/videoN you have plugged in.
     # The container will gracefully ignore missing nodes.

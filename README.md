@@ -128,7 +128,7 @@ Hit **Start**. The live preview comes up on the right. Every detection appears i
 `config.yaml` is generated on first start and lives in the `sparkler_config` Docker volume. You can edit it directly:
 
 ```bash
-docker compose exec sparkler vi /app/sparkler/config/config.yaml
+docker compose exec sparkler vi /app/sparklers_anpr/config/config.yaml
 docker compose restart
 ```
 
@@ -146,7 +146,7 @@ cd jetson-anpr-studio
 docker compose -f docker-compose.yml -f docker-compose.dev.yml up
 ```
 
-This builds the image locally and bind-mounts your `alpr/` and `sparkler/` directories. uvicorn runs with `--reload` so saving a `.py` file restarts the app immediately. No rebuild needed unless you change the Dockerfile or `requirements.txt`.
+This builds the image locally and bind-mounts your `alpr/` and `sparklers_anpr/` directories. uvicorn runs with `--reload` so saving a `.py` file restarts the app immediately. No rebuild needed unless you change the Dockerfile or `requirements.txt`.
 
 ### Layout
 
@@ -156,7 +156,7 @@ jetson-anpr-studio/
 │   ├── core.py                 # ALPRPipeline class
 │   ├── vlm_worker.py           # Florence-2 background worker
 │   └── *.pt                    # YOLO11 plate-detector weights
-├── sparkler/                   # FastAPI web app
+├── sparklers_anpr/             # FastAPI web app
 │   ├── app.py                  # routes + endpoints
 │   ├── pipeline.py             # PipelineRunner (background thread)
 │   ├── config.py               # config schema + load/save

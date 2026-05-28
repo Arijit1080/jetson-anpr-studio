@@ -17,7 +17,7 @@ set -euo pipefail
 log() { echo "[entrypoint] $*"; }
 
 ALPR_DIR=${ALPR_DIR:-/app/alpr}
-RUNS_DIR=${RUNS_DIR:-/app/sparkler/runs}
+RUNS_DIR=${RUNS_DIR:-/app/sparklers_anpr/runs}
 
 # ----- 1. ensure persistent dirs exist on the mounted volume -----
 mkdir -p "${RUNS_DIR}/crops" "${RUNS_DIR}/uploads" "${RUNS_DIR}/frames"
@@ -32,5 +32,5 @@ fi
 
 # ----- 3. hand off to the CMD -----
 log "starting: $*"
-cd /app/sparkler
+cd /app/sparklers_anpr
 exec "$@"

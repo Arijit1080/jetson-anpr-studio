@@ -1,6 +1,6 @@
 """Sparkler ANPR Studio — persisted runtime config.
 
-Loads from ~/sparkler/config.yaml on startup; writes back when the user
+Loads from ~/sparklers_anpr/config.yaml on startup; writes back when the user
 saves from the Settings page.  Defaults match what the Jetson Orin Nano
 8 GB can reliably run.
 """

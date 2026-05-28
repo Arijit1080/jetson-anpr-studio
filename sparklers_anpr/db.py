@@ -1,6 +1,6 @@
 """Sparkler ANPR Studio — SQLite store.
 
-Single file: ~/sparkler/runs/sparkler.db.  One row per `(session, track_id)`
+Single file: ~/sparklers_anpr/runs/sparkler.db.  One row per `(session, track_id)`
 detection.  Crops live as JPEG files under runs/crops/ and are referenced
 by relative path.
 """

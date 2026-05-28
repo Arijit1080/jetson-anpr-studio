@@ -7,7 +7,7 @@
 # What this overrides:
 #   - `image:` replaced with `build:` so the image is built locally from
 #     the Dockerfile in this repo.  Edit the Dockerfile → rebuild.
-#   - `alpr/` and `sparkler/` are bind-mounted from your workstation so
+#   - `alpr/` and `sparklers_anpr/` are bind-mounted from your workstation so
 #     Python file changes show up live in the container.
 #   - uvicorn runs with --reload so the FastAPI app auto-restarts on edit.
 #   - Container name uses a `-dev` suffix so it doesn't collide with a
@@ -30,10 +30,10 @@ services:
     # Bind-mount source so edits show up without rebuilding the image.
     volumes:
       - ./alpr:/app/alpr
-      - ./sparkler:/app/sparkler
+      - ./sparklers_anpr:/app/sparklers_anpr
       # Keep the prod volumes too:
       - /tmp/argus_socket:/tmp/argus_socket
-      - sparkler_runs:/app/sparkler/runs
+      - sparkler_runs:/app/sparklers_anpr/runs
       - sparkler_models:/opt/models
 
     # Run uvicorn with --reload so editing pipeline.py / app.py
@@ -43,5 +43,5 @@ services:
         --host 0.0.0.0
         --port 8080
         --reload
-        --reload-dir /app/sparkler
+        --reload-dir /app/sparklers_anpr
         --reload-dir /app/alpr

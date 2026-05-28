@@ -1,7 +1,7 @@
 """Sparkler ANPR Studio — FastAPI app.
 
 Run:
-    cd ~/sparkler
+    cd ~/sparklers_anpr
     source ~/yolo11/.venv/bin/activate
     uvicorn app:app --host 0.0.0.0 --port 8080
 """

@@ -124,8 +124,8 @@ WORKDIR /app
 # alpr/ holds the YOLO+OCR pipeline (also the .pt weights for engine regen).
 COPY alpr/ /app/alpr/
 
-# sparkler/ holds the FastAPI web UI.
-COPY sparkler/ /app/sparkler/
+# sparklers_anpr/ holds the FastAPI web UI.
+COPY sparklers_anpr/ /app/sparklers_anpr/
 
 # entrypoint + engine regenerator
 COPY docker/entrypoint.sh /app/entrypoint.sh
@@ -135,19 +135,19 @@ RUN chmod +x /app/entrypoint.sh
 # ---------------------------------------------------------------------------
 # Runtime configuration
 # ---------------------------------------------------------------------------
-ENV PYTHONPATH=/app/alpr:/app/sparkler \
+ENV PYTHONPATH=/app/alpr:/app/sparklers_anpr \
     PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True \
     SPARKLER_HOST=0.0.0.0 \
     SPARKLER_PORT=8080 \
     HF_HUB_OFFLINE=0
 
 # Volume mounts (declared as best-practice hints; compose still binds them):
-#   /app/sparkler/runs   — SQLite DB + crops + uploads (persist across restarts)
+#   /app/sparklers_anpr/runs   — SQLite DB + crops + uploads (persist across restarts)
 #   /opt/models          — model cache (persist if you want to update weights)
-VOLUME ["/app/sparkler/runs", "/opt/models"]
+VOLUME ["/app/sparklers_anpr/runs", "/opt/models"]
 
 EXPOSE 8080
 
-WORKDIR /app/sparkler
+WORKDIR /app/sparklers_anpr
 ENTRYPOINT ["/app/entrypoint.sh"]
 CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8080"]
