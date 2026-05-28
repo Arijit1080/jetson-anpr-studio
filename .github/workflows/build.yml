@@ -86,7 +86,6 @@ jobs:
             type=sha,prefix=sha-,format=short
             type=semver,pattern=v{{version}}
             type=semver,pattern=v{{major}}.{{minor}}
-            type=ref,event=workflow_dispatch,prefix=manual-
 
       # ----------------------------------------------------------------
       # Step 5 — the actual build + push.
