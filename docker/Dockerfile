@@ -54,17 +54,20 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 #   https://developer.download.nvidia.com/compute/redist/jp/v62/
 # For JetPack 6.2 (L4T R36.4) we want torch 2.5.0a0+nv24.08.
 # ---------------------------------------------------------------------------
-# pypi.jetson-ai-lab.io hosts the official Jetson AI Lab wheel index — both
-# torch and torchvision are pre-built against CUDA 12.6 for JetPack 6.x.  The
-# wheels carry NVIDIA-style version tags like `2.5.0a0+...nv24.08` so we don't
-# pin an exact version; pip picks the latest matching cp310 aarch64.
+# pypi.jetson-ai-lab.io hosts the Jetson AI Lab wheel index.  We pin
+# torch < 2.12 to stay in the CUDA 12.6 line — jetson-ai-lab's newer
+# 2.12+ wheels were built against CUDA 13 which doesn't match JetPack
+# 6.2 / CUDA 12.6 on the Jetson, leading to
+#   torch.cuda.is_available() == False at runtime.
+# torchvision is paired with torch's matching minor version.
 ARG TORCH_INDEX=https://pypi.jetson-ai-lab.io/jp6/cu126/+simple/
 RUN pip3 install \
         --index-url ${TORCH_INDEX} \
         --extra-index-url https://pypi.org/simple/ \
-        torch torchvision
+        "torch<2.12" "torchvision<0.27"
 
-# Pin numpy < 2 immediately — the system cv2 4.8 was built against numpy 1.x ABI.
+# Pin numpy < 2 — the system cv2 4.8 was built against numpy 1.x ABI,
+# and torch < 2.12 was also compiled against numpy 1.x.
 RUN pip3 install "numpy==1.26.4"
 
 # ---------------------------------------------------------------------------
@@ -74,7 +77,8 @@ RUN pip3 install "numpy==1.26.4"
 # doesn't invalidate the (slow) pip-install layer.
 # ---------------------------------------------------------------------------
 COPY docker/requirements.txt /tmp/requirements.txt
-RUN pip3 install -r /tmp/requirements.txt
+COPY docker/constraints.txt /tmp/constraints.txt
+RUN pip3 install --constraint /tmp/constraints.txt -r /tmp/requirements.txt
 
 # ---------------------------------------------------------------------------
 # Stage 3 — PaddleOCR (special handling)
@@ -88,7 +92,7 @@ RUN pip3 install -r /tmp/requirements.txt
 # check passes without actually overwriting system cv2.
 # ---------------------------------------------------------------------------
 COPY docker/requirements-paddle.txt /tmp/requirements-paddle.txt
-RUN pip3 install --no-deps -r /tmp/requirements-paddle.txt && \
+RUN pip3 install --no-deps --constraint /tmp/constraints.txt -r /tmp/requirements-paddle.txt && \
     SP=$(python3 -c "import site; print(site.getsitepackages()[0])") && \
     D="$SP/opencv_contrib_python-4.10.0.84.dist-info" && \
     mkdir -p "$D" && \
@@ -112,6 +116,10 @@ ENV HF_HOME=/opt/models/huggingface \
 
 COPY docker/prefetch_models.py /tmp/prefetch_models.py
 RUN mkdir -p /opt/models && python3 /tmp/prefetch_models.py
+
+# Final guard: make absolutely sure numpy is still on the 1.x line
+# after every pip install step above.  Cheap belt-and-suspenders.
+RUN pip3 install --force-reinstall --no-deps "numpy==1.26.4"
 
 # ---------------------------------------------------------------------------
 # Stage 5 — Application code

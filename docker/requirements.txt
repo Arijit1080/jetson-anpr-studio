@@ -23,8 +23,11 @@ Pillow>=10.0
 einops>=0.8
 
 # ---------- OCR backends (paddle handled separately) ----------
+# Both work; fast-plate-ocr 0.3+ exposes ONNXPlateRecognizer (was
+# LicensePlateRecognizer in <0.3).  Our alpr/core.py handles both class
+# names so any 0.3.x release works.
 easyocr>=1.7,<2.0
-fast-plate-ocr>=0.3,<1.0
+fast-plate-ocr>=0.3,<0.5
 
 # ---------- ByteTrack tracking dep used by ultralytics ----------
 lap>=0.5.0

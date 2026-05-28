@@ -89,8 +89,14 @@ class ALPRPipeline:
         self._paddle_api = None      # "v3" or "v2" — paddleocr's call signature changed
 
         if self.ocr_backend == "fast":
-            from fast_plate_ocr import LicensePlateRecognizer  # noqa: WPS433
-            self._fast = LicensePlateRecognizer(fast_model)
+            # fast-plate-ocr renamed `LicensePlateRecognizer` → `ONNXPlateRecognizer`
+            # in 0.3.0.  Try the new name first, fall back to the legacy class
+            # so the same code base works against both API generations.
+            try:
+                from fast_plate_ocr import ONNXPlateRecognizer as _FastCls  # noqa: WPS433
+            except ImportError:
+                from fast_plate_ocr import LicensePlateRecognizer as _FastCls  # noqa: WPS433
+            self._fast = _FastCls(fast_model)
         elif self.ocr_backend == "easyocr":
             import easyocr  # noqa: WPS433
             self._easyocr = easyocr.Reader(list(ocr_langs), gpu=ocr_gpu, verbose=False)

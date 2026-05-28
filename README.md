@@ -371,7 +371,13 @@ The nvidia-container-toolkit may have been removed or never installed. `sudo apt
 The `/tmp/argus_socket` mount or `privileged: true` flag was dropped. Check `docker compose config` and make sure both are present. Also confirm `nvargus-daemon.service` is running on the host (`systemctl is-active nvargus-daemon`).
 
 **`numpy.core.multiarray failed to import`**
-Some pip operation upgraded numpy past 2.x and broke the system cv2 4.8 ABI. The container's image has numpy pinned at 1.26.4, so this should never happen inside it — but if you've been hacking inside the container with `--no-deps` or bind-mounted Python files, run `pip install numpy==1.26.4 --force-reinstall` inside the container.
+Some pip operation upgraded numpy past 2.x and broke the system cv2 4.8 ABI. The container's image has numpy pinned at 1.26.4 via `docker/constraints.txt`, so this should never happen inside it — but if you've been hacking inside the container with `--no-deps` or bind-mounted Python files, run `pip install numpy==1.26.4 --force-reinstall` inside the container.
+
+**`The NVIDIA driver on your system is too old (found version 12060)` / `torch.cuda.is_available() == False`**
+You're running an image built against CUDA 13 (torch ≥ 2.12) on a Jetson with CUDA 12.6 (JetPack 6.x). The Dockerfile pins `torch < 2.12` to stay in the cu126 line — make sure you're pulling `:latest` from after that fix landed, and that your local cache isn't stuck on an older image (`docker pull ghcr.io/.../jetson-anpr-studio:latest` then `docker compose up -d --force-recreate`).
+
+**`ImportError: cannot import name 'LicensePlateRecognizer' from 'fast_plate_ocr'`**
+fast-plate-ocr renamed the class to `ONNXPlateRecognizer` in 0.3.0. `alpr/core.py` already handles both names via a try/except import. If you hit this anyway, you're probably running an old image — pull the latest and recreate the container.
 
 **Florence-2 OOM (`exit code 137` in compose logs)**
 8 GB Orin Nano is tight. Switch to fast-plate-ocr or PaddleOCR alone (no VLM) from the dashboard. Or recreate the container so the GPU memory is fully freed: `docker compose down && docker compose up -d`. If you need VLM specifically and OOMs persist, restore the second 8 GB swapfile we dropped during disk cleanup (see the disk-management section of the project's commit history).

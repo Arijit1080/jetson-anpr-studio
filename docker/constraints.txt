@@ -1,0 +1,15 @@
+# Pip constraints used during requirements.txt install.
+#
+# These packages must NEVER be installed — they would clobber the
+# GStreamer-enabled system OpenCV (apt python3-opencv 4.8) we rely on
+# for CSI camera support.  The trick is the `; python_version < '0'`
+# environment marker which is always false, so pip silently skips
+# them whenever a transitive dep tries to pull them in.
+
+opencv-python ; python_version < '0'
+opencv-python-headless ; python_version < '0'
+opencv-contrib-python ; python_version < '0'
+
+# Pin numpy to the 1.x line.  Both the system cv2 ABI and our
+# pinned torch < 2.12 wheels were compiled against numpy 1.x.
+numpy<2
