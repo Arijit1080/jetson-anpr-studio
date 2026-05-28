@@ -54,11 +54,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 #   https://developer.download.nvidia.com/compute/redist/jp/v62/
 # For JetPack 6.2 (L4T R36.4) we want torch 2.5.0a0+nv24.08.
 # ---------------------------------------------------------------------------
-ARG TORCH_INDEX=https://pypi.jetson-ai-lab.dev/jp6/cu126
-RUN pip3 install --index-url ${TORCH_INDEX} \
-        "torch==2.5.0" "torchvision==0.20.0" \
-    || pip3 install \
-        --extra-index-url https://developer.download.nvidia.com/compute/redist/jp/v62 \
+# pypi.jetson-ai-lab.io hosts the official Jetson AI Lab wheel index — both
+# torch and torchvision are pre-built against CUDA 12.6 for JetPack 6.x.  The
+# wheels carry NVIDIA-style version tags like `2.5.0a0+...nv24.08` so we don't
+# pin an exact version; pip picks the latest matching cp310 aarch64.
+ARG TORCH_INDEX=https://pypi.jetson-ai-lab.io/jp6/cu126/+simple/
+RUN pip3 install \
+        --index-url ${TORCH_INDEX} \
+        --extra-index-url https://pypi.org/simple/ \
         torch torchvision
 
 # Pin numpy < 2 immediately — the system cv2 4.8 was built against numpy 1.x ABI.
