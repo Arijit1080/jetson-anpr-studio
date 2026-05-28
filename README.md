@@ -6,8 +6,6 @@ A self-hosted ANPR (Automatic Number Plate Recognition) platform that runs entir
 
 Built originally as a YouTube tutorial project. Now Dockerized for one-command install on any Jetson.
 
-![demo banner placeholder — drop a screenshot in docs/images/banner.png after first run](docs/images/banner.png)
-
 ---
 
 ## Features
