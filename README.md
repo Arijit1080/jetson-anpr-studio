@@ -57,15 +57,59 @@ This installs Docker + nvidia-container-toolkit if missing, pulls the prebuilt i
 #    On JetPack 6.x they usually are; check with:
 docker info | grep -i nvidia
 
-# 2. Grab the compose file.
+# 2. Make sure your user can talk to docker without sudo.
+#    (One-time. After this, log out and back in for it to take effect.)
+sudo usermod -aG docker $USER
+
+# 3. If a bare-metal Sparkler is already running, stop it so port 8080 is free.
+sudo systemctl stop sparkler 2>/dev/null
+sudo systemctl disable sparkler 2>/dev/null   # optional — prevents autostart
+
+# 4. Authenticate to GHCR (only if the image is still private — see below).
+echo <YOUR_GH_TOKEN> | docker login ghcr.io -u <YOUR_GH_USER> --password-stdin
+
+# 5. Grab the compose file.
+mkdir -p ~/jetson-anpr-studio && cd ~/jetson-anpr-studio
 curl -O https://raw.githubusercontent.com/Arijit1080/jetson-anpr-studio/main/docker-compose.yml
 
-# 3. Pull + start.
+# 6. Pull + start.
 docker compose pull
 docker compose up -d
+docker compose logs -f          # watch first start (engine regen ~2 min)
 ```
 
 First start regenerates TensorRT engines from the bundled `.pt` weights, which takes ~2 minutes per model. Subsequent restarts are instant.
+
+---
+
+## Pulling a private image
+
+GHCR packages are **private by default** the first time GitHub Actions pushes them. The image has to be either made public (one-time, four clicks) or pulled with auth.
+
+### Option 1 — Make the package public (simplest)
+
+After the first successful CI build:
+
+1. Open https://github.com/<your-user>/jetson-anpr-studio/pkgs/container/jetson-anpr-studio
+2. Right sidebar → **Package settings** (gear icon)
+3. Scroll to **Danger Zone** at the bottom → **Change visibility** → **Public**
+4. Type the package name to confirm
+
+After this, anyone — including a fresh Jetson with no GitHub login — can `docker pull` the image. This is the friction-free path if you want viewers / second machines to install with one command.
+
+### Option 2 — Keep it private, log in with a token
+
+Useful if you don't want the image public. Any GitHub Personal Access Token with the `read:packages` scope works. You can also reuse the OAuth token the `gh` CLI is using (`gh auth token`) — for your own packages it has implicit pull access, even without explicit `read:packages` scope.
+
+```bash
+# On the Jetson:
+echo $TOKEN | docker login ghcr.io -u <your-gh-user> --password-stdin
+docker pull ghcr.io/<your-gh-user>/jetson-anpr-studio:latest
+```
+
+The login token is cached in `~/.docker/config.json`, so you only do this once per machine.
+
+> **Note**: if you're running `docker` with `sudo` (because your user isn't in the `docker` group yet), the auth cache is stored under `/root/.docker/`, not `~/.docker/`. Either run as the regular user (after `usermod` and re-login), or copy the config: `sudo cp -r ~/.docker /root/.docker`.
 
 ---
 
@@ -265,24 +309,81 @@ docker compose logs --since 1h         # last hour
 docker compose exec sparkler bash
 ```
 
+### Freeing disk space on a tight Jetson
+
+The image is ~6.7 GB and `docker pull` keeps a copy of every layer + the merged image, so on an Orin Nano eMMC (56 GB total) you want at least **10 GB free** before pulling. Common things to clean up:
+
+```bash
+# 1. User-level junk (safe, ~1-2 GB).
+pip cache purge
+rm -rf ~/.cache/huggingface ~/.paddlex ~/yolov8
+sudo apt clean
+sudo apt autoremove -y
+
+# 2. If you've moved to Docker and don't need the bare-metal venv anymore
+#    (~6.7 GB). Stop the systemd service first if it's still around.
+sudo systemctl stop sparkler 2>/dev/null
+sudo systemctl disable sparkler 2>/dev/null
+rm -rf ~/yolo11/.venv
+
+# 3. Recover swap space (~8 GB) if you had previously added two swapfiles
+#    for Florence-2 GPU mode. Keep one + zram = 12 GB swap is plenty.
+sudo swapoff /swapfile2 2>/dev/null
+sudo rm -f /swapfile2
+sudo sed -i.bak '/swapfile2/d' /etc/fstab
+```
+
+### Adding an M.2 NVMe (recommended for serious use)
+
+The Orin Nano dev kit has an M.2 NVMe slot. Even a cheap 256 GB drive solves disk pressure permanently. After mounting it, relocate the docker data root:
+
+```bash
+sudo systemctl stop docker
+sudo rsync -aHAX /var/lib/docker/ /mnt/nvme/docker/
+sudo sed -i 's|"data-root":.*|"data-root": "/mnt/nvme/docker",|' /etc/docker/daemon.json 2>/dev/null \
+    || echo '{"data-root": "/mnt/nvme/docker"}' | sudo tee /etc/docker/daemon.json
+sudo systemctl start docker
+```
+
 ---
 
 ## Troubleshooting
 
+**`permission denied while trying to connect to the docker API at unix:///var/run/docker.sock`**
+Your user isn't in the `docker` group yet. Either log out and back in after running `sudo usermod -aG docker $USER`, or for the current session use `sg docker -c 'docker compose up -d'` as a workaround. The `install.sh` script already handles this with the `sg docker` fallback.
+
+**`Error response from daemon: Head ... : denied` / `401 Unauthorized` on `docker pull`**
+The GHCR image is still private. Either flip the package to public on GitHub (see [Pulling a private image](#pulling-a-private-image)) or `docker login ghcr.io` with a token that has `read:packages` scope (or use `gh auth token`).
+
+**Port 8080 already in use**
+A bare-metal `sparkler.service` is still running (the systemd unit from the pre-Docker setup). Stop it with `sudo systemctl stop sparkler && sudo systemctl disable sparkler`. The `install.sh` script does this automatically when it detects the conflict.
+
+**Docker login cached but `sudo docker pull` says 401**
+`sudo docker` reads its config from `/root/.docker/`, not `~/.docker/`. Either run docker as your regular user (after the group fix above), or copy your auth: `sudo cp -r ~/.docker /root/.docker`.
+
 **`Error: could not select device driver "nvidia" with capabilities`**
 The nvidia-container-runtime isn't configured. Run `sudo nvidia-ctk runtime configure --runtime=docker && sudo systemctl restart docker`.
 
+**`docker info | grep nvidia` shows nothing on JetPack 6.x**
+The nvidia-container-toolkit may have been removed or never installed. `sudo apt-get install -y nvidia-container-toolkit && sudo nvidia-ctk runtime configure --runtime=docker && sudo systemctl restart docker`.
+
 **CSI camera doesn't appear in the source dropdown**
-The `/tmp/argus_socket` mount or `privileged: true` flag was dropped. Check `docker compose config` and make sure both are present. Also confirm `nvargus-daemon.service` is running on the host.
+The `/tmp/argus_socket` mount or `privileged: true` flag was dropped. Check `docker compose config` and make sure both are present. Also confirm `nvargus-daemon.service` is running on the host (`systemctl is-active nvargus-daemon`).
 
 **`numpy.core.multiarray failed to import`**
-Some pip operation upgraded numpy past 2.x. The container's image has numpy pinned, so this should never happen inside the container — but if you've been hacking with `--no-deps` or bind-mounted Python files, run `pip install numpy==1.26.4 --force-reinstall` inside the container.
+Some pip operation upgraded numpy past 2.x and broke the system cv2 4.8 ABI. The container's image has numpy pinned at 1.26.4, so this should never happen inside it — but if you've been hacking inside the container with `--no-deps` or bind-mounted Python files, run `pip install numpy==1.26.4 --force-reinstall` inside the container.
 
-**Florence-2 OOM**
-8 GB Orin Nano is tight. Switch to fast-plate-ocr alone (no VLM) from the dashboard. Or restart the container so the GPU memory is fully freed before re-attempting.
+**Florence-2 OOM (`exit code 137` in compose logs)**
+8 GB Orin Nano is tight. Switch to fast-plate-ocr or PaddleOCR alone (no VLM) from the dashboard. Or recreate the container so the GPU memory is fully freed: `docker compose down && docker compose up -d`. If you need VLM specifically and OOMs persist, restore the second 8 GB swapfile we dropped during disk cleanup (see the disk-management section of the project's commit history).
 
 **First start hangs at "regenerating engines"**
-Engine export takes ~60 s per model on Orin Nano. If it takes >5 min, check `docker compose logs` for errors. Often `--privileged` was missed and the GPU isn't accessible.
+Engine export takes ~60 s per model on Orin Nano. If it takes >5 min, check `docker compose logs` for errors. Often `--privileged` was missed and the GPU isn't accessible from inside the container.
+
+**Apt complains `dpkg was interrupted, you must manually run 'sudo dpkg --configure -a'`**
+A previous apt operation got killed mid-way (unrelated to Sparkler). Run `sudo dpkg --configure -a` to finish it. If a few packages are stuck on missing dependencies (e.g., `packagekit-tools` needing `packagekit`), remove them: `sudo apt-get remove --purge -y packagekit-tools gstreamer1.0-packagekit`.
+
+**JetPack OTA half-applied across reboots**
+If `cat /etc/nv_tegra_release` reports an older revision than expected, the OTA was queued but never fully applied. `sudo dpkg --configure -a && sudo apt autoremove -y && sudo reboot` will finish it. The Docker image targets `r36.4.0` which covers all R36.4.x patch releases.
 
 ---
 
