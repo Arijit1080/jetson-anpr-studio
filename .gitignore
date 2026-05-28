@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+.venv/
+venv/
+env/
+*.egg-info/
+.pytest_cache/
+
+# Runtime data (sparkler stores these via the docker volume; never check in)
+sparkler/runs/
+**/runs/
+**/crops/
+**/uploads/
+**/frames/
+*.db
+*.db-journal
+*.db-wal
+
+# TRT engines — regenerated on container start, never committed
+*.engine
+
+# editor / OS
+.DS_Store
+*.swp
+.idea/
+.vscode/
+
+# secrets / local config
+.env
+.env.local
+docker-compose.override.yml
+
+# backups
+*.bak
+*.orig
+_smoke_*.py

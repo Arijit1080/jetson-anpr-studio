@@ -1,0 +1,242 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+  <!-- left: live view -->
+  <section class="lg:col-span-2 space-y-4">
+    <div class="bg-black rounded-lg overflow-hidden shadow-xl aspect-video flex items-center justify-center">
+      <img src="/stream.mjpg" alt="live" class="w-full h-full object-contain"/>
+    </div>
+
+    <!-- controls -->
+    <div x-data="{ srcType: '{{ cfg.source.type }}', backend: '{{ cfg.pipeline.ocr_backend }}', detector: '{{ cfg.pipeline.detector_path }}' }"
+         class="rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-4 space-y-3">
+      <h2 class="font-semibold text-base flex items-center gap-2">
+        <span class="text-amber-500">▶</span> Source & Pipeline
+      </h2>
+
+      <form id="start-form" hx-post="/api/start" hx-encoding="multipart/form-data"
+            hx-swap="none" class="grid grid-cols-1 md:grid-cols-2 gap-3">
+
+        <label class="text-sm space-y-1">
+          <span class="block text-slate-500 dark:text-slate-400">Source</span>
+          <select name="type" x-model="srcType" class="w-full p-2 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800">
+            <option value="csi">CSI (IMX219)</option>
+            <option value="usb">USB camera</option>
+            <option value="rtsp">RTSP / HTTP</option>
+            <option value="image">Image file (server path)</option>
+            <option value="video">Video file (server path)</option>
+          </select>
+        </label>
+
+        <label class="text-sm space-y-1" x-show="srcType === 'usb'">
+          <span class="block text-slate-500 dark:text-slate-400">USB device</span>
+          <select name="uri" class="w-full p-2 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800">
+            {% for d in usb_cameras %}<option value="{{ d }}">{{ d }}</option>{% endfor %}
+            {% if not usb_cameras %}<option value="/dev/video0">/dev/video0</option>{% endif %}
+          </select>
+        </label>
+
+        <label class="text-sm space-y-1" x-show="srcType === 'rtsp'">
+          <span class="block text-slate-500 dark:text-slate-400">RTSP / HTTP URL</span>
+          <input type="text" name="uri" placeholder="rtsp://user:pass@192.168.x.x/stream"
+                 class="w-full p-2 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800"/>
+        </label>
+
+        <label class="text-sm space-y-1" x-show="srcType === 'image' || srcType === 'video'">
+          <span class="block text-slate-500 dark:text-slate-400">File path on Jetson (or upload below)</span>
+          <input type="text" name="uri" placeholder="/home/jetson/Desktop/numberPlates/n1.JPG"
+                 class="w-full p-2 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800"/>
+        </label>
+
+        <label class="text-sm space-y-1" x-show="srcType === 'csi'">
+          <span class="block text-slate-500 dark:text-slate-400">CSI sensor id</span>
+          <select name="csi_sensor_id" class="w-full p-2 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800">
+            <option value="0">0 (CAM0)</option><option value="1">1 (CAM1)</option>
+          </select>
+        </label>
+
+        <label class="text-sm space-y-1" x-show="srcType === 'csi'">
+          <span class="block text-slate-500 dark:text-slate-400">Flip method</span>
+          <select name="flip_method" class="w-full p-2 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800">
+            <option value="0">0 — none</option>
+            <option value="2" selected>2 — 180°</option>
+            <option value="4">4 — horizontal flip</option>
+            <option value="6">6 — vertical flip</option>
+          </select>
+        </label>
+
+        <label class="text-sm space-y-1">
+          <span class="block text-slate-500 dark:text-slate-400">Detector</span>
+          <select name="detector" x-model="detector" class="w-full p-2 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800">
+            {% for d in cfg.pipeline.detectors_available %}
+              <option value="{{ d.path }}">{{ d.label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+
+        <label class="text-sm space-y-1">
+          <span class="block text-slate-500 dark:text-slate-400">OCR backend</span>
+          <select name="backend" x-model="backend" class="w-full p-2 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800">
+            {% for b in cfg.pipeline.ocr_backends_available %}
+              <option value="{{ b.id }}">{{ b.label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+
+        <label class="text-sm space-y-1">
+          <span class="block text-slate-500 dark:text-slate-400">Detector conf</span>
+          <input type="number" step="0.01" min="0.05" max="0.95"
+                 name="det_conf" value="{{ cfg.pipeline.detector_conf }}"
+                 class="w-full p-2 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800"/>
+        </label>
+
+        <label class="text-sm space-y-1">
+          <span class="block text-slate-500 dark:text-slate-400">Input size</span>
+          <input type="number" step="32" min="320" max="1280"
+                 name="imgsz" value="{{ cfg.pipeline.imgsz }}"
+                 class="w-full p-2 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800"/>
+        </label>
+
+        <div class="md:col-span-2 flex gap-2 pt-1">
+          <button type="submit" class="px-4 py-2 rounded bg-amber-500 hover:bg-amber-600 text-white font-medium">
+            ▶ Start / Restart
+          </button>
+          <button type="button" hx-post="/api/stop" hx-swap="none"
+                  class="px-4 py-2 rounded bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600">
+            ■ Stop
+          </button>
+        </div>
+      </form>
+
+      <!-- file upload -->
+      <div class="border-t border-slate-200 dark:border-slate-800 pt-3">
+        <p class="text-xs text-slate-500 dark:text-slate-400 mb-2">Or upload a file (image / video) → starts a new session automatically</p>
+        <form hx-post="/api/upload" hx-encoding="multipart/form-data"
+              hx-target="#upload-status" hx-swap="innerHTML"
+              class="flex gap-2 items-center">
+          <input type="file" name="file" required
+                 accept=".jpg,.jpeg,.png,.bmp,.mp4,.mov,.avi,.mkv,.webm"
+                 class="text-sm flex-1"/>
+          <button class="px-3 py-1.5 rounded bg-slate-700 text-white text-sm">Upload & start</button>
+        </form>
+        <div id="upload-status" class="text-xs text-slate-500 mt-2"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- right: status + live feed -->
+  <aside class="space-y-4">
+
+    <!-- status -->
+    <div x-data="{ s: {} }"
+         x-init="
+           const refresh = () => fetch('/api/status').then(r=>r.json()).then(d=>s=d);
+           refresh(); setInterval(refresh, 2000);
+           sparkler.subscribe(e => { if (e.type === 'session_started' || e.type === 'session_ended') refresh(); });
+         "
+         class="rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-4">
+      <h2 class="font-semibold text-base mb-3">Status</h2>
+      <dl class="grid grid-cols-2 gap-y-1 text-sm">
+        <dt class="text-slate-500">Running</dt>
+        <dd>
+          <template x-if="s.runner && s.runner.running"><span class="badge bg-emerald-100 text-emerald-800">● live</span></template>
+          <template x-if="!s.runner || !s.runner.running"><span class="badge bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-300">○ idle</span></template>
+        </dd>
+        <dt class="text-slate-500">FPS</dt>
+        <dd x-text="s.runner ? s.runner.fps.toFixed(1) : '—'"></dd>
+        <dt class="text-slate-500">Source</dt>
+        <dd x-text="s.runner ? (s.runner.source_type + (s.runner.source_uri ? ':'+s.runner.source_uri.split('/').pop() : '')) : '—'"></dd>
+        <dt class="text-slate-500">Backend</dt>
+        <dd x-text="s.runner ? s.runner.backend : '—'"></dd>
+        <dt class="text-slate-500">VLM device</dt>
+        <dd x-text="s.runner && s.runner.vlm_device ? s.runner.vlm_device : '—'"></dd>
+        <dt class="text-slate-500">VLM queue</dt>
+        <dd x-text="s.runner ? s.runner.vlm_queue : '—'"></dd>
+        <dt class="text-slate-500">Total plates</dt>
+        <dd x-text="s.stats ? s.stats.total_detections : '—'"></dd>
+        <dt class="text-slate-500">Unique plates</dt>
+        <dd x-text="s.stats ? s.stats.unique_plates : '—'"></dd>
+        <dt class="text-slate-500">Last hour</dt>
+        <dd x-text="s.stats ? s.stats.last_hour : '—'"></dd>
+        <dt class="text-slate-500">Sessions</dt>
+        <dd x-text="s.stats ? s.stats.sessions : '—'"></dd>
+      </dl>
+      <template x-if="s.runner && s.runner.last_error">
+        <p class="mt-3 text-xs text-rose-500" x-text="s.runner.last_error"></p>
+      </template>
+    </div>
+
+    <!-- live detections -->
+    <div x-data="{ rows: [] }"
+         x-init="
+           const refresh = () => fetch('/api/recent?limit=20').then(r=>r.json()).then(d=>rows=d);
+           refresh();
+           sparkler.subscribe(e => { if (e.type === 'plate' || e.type === 'vlm_verified') refresh(); });
+         "
+         class="rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-4">
+      <div class="flex items-center justify-between mb-3">
+        <h2 class="font-semibold text-base">Latest detections</h2>
+        <a href="/log" class="text-xs text-amber-500 hover:underline">view all →</a>
+      </div>
+      <ul class="space-y-2 text-sm max-h-[480px] overflow-y-auto">
+        <template x-for="r in rows" :key="r.id">
+          <li class="flex items-center gap-3 border-b border-slate-100 dark:border-slate-800 pb-2 last:border-0">
+            <template x-if="r.crop_path">
+              <a :href="'/plate/'+r.plate_text">
+                <img :src="'/crops/'+r.crop_path" class="h-10 w-16 object-cover rounded" loading="lazy"/>
+              </a>
+            </template>
+            <template x-if="!r.crop_path">
+              <div class="h-10 w-16 rounded bg-slate-200 dark:bg-slate-800"></div>
+            </template>
+            <div class="flex-1 min-w-0">
+              <a :href="'/plate/'+r.plate_text" class="font-mono font-semibold truncate block" x-text="r.plate_text || '—'"></a>
+              <div class="text-xs text-slate-500 font-mono truncate" x-show="r.vlm_text" x-text="'VLM: ' + r.vlm_text"></div>
+              <div class="text-xs text-slate-500 flex gap-1.5 flex-wrap mt-0.5">
+                <span x-text="new Date(r.last_seen*1000).toLocaleTimeString()"></span>
+                <template x-if="r.verified"><span class="badge bg-emerald-600 text-white">✓ verified</span></template>
+                <template x-if="r.vlm_text && !r.verified"><span class="badge bg-amber-100 text-amber-800">mismatch</span></template>
+                <template x-if="!r.vlm_text"><span class="badge bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-300">OCR only</span></template>
+                <span x-text="'×' + r.n_frames"></span>
+              </div>
+            </div>
+          </li>
+        </template>
+        <template x-if="rows.length === 0">
+          <li class="text-xs text-slate-500 text-center py-4">No detections yet. Start a source above.</li>
+        </template>
+      </ul>
+    </div>
+  </aside>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+  // upload form rewrites itself to call /api/start
+  document.body.addEventListener("htmx:afterRequest", function (evt) {
+    if (!evt.detail.xhr.responseURL) return;
+    if (evt.detail.xhr.responseURL.endsWith("/api/upload")) {
+      let res;
+      try { res = JSON.parse(evt.detail.xhr.responseText); } catch (_) { return; }
+      if (res && res.ok) {
+        // construct a new start request
+        const fd = new FormData();
+        fd.append("type", res.type);
+        fd.append("uri", res.path);
+        const cur = document.querySelector("#start-form");
+        ["backend","detector","det_conf","imgsz"].forEach(n => {
+          const el = cur.querySelector(`[name="${n}"]`);
+          if (el) fd.append(n, el.value);
+        });
+        fetch("/api/start", { method: "POST", body: fd });
+        document.querySelector("#upload-status").innerHTML =
+            `<span class="text-emerald-500">uploaded → started: ${res.path}</span>`;
+      }
+    }
+  });
+</script>
+{% endblock %}

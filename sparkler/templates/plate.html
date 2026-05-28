@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block title %}{{ text }} · {{ cfg.ui.title }}{% endblock %}
+{% block content %}
+
+<div class="space-y-4">
+  <div class="flex items-baseline gap-3">
+    <h1 class="font-mono text-3xl font-bold tracking-wide">{{ text }}</h1>
+    <span class="text-sm text-slate-500">{{ rows|length }} sighting{{ 's' if rows|length != 1 else '' }}</span>
+    <a href="/log?q={{ text }}" class="ml-auto text-sm text-amber-500 hover:underline">← back to log</a>
+  </div>
+
+  <!-- summary -->
+  <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+    <div class="rounded bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-3">
+      <div class="text-xs text-slate-500">Total frames</div>
+      <div class="text-2xl font-semibold">{{ rows | sum(attribute='n_frames') }}</div>
+    </div>
+    <div class="rounded bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-3">
+      <div class="text-xs text-slate-500">Unique sessions</div>
+      <div class="text-2xl font-semibold">{{ rows | map(attribute='session_id') | unique | list | length }}</div>
+    </div>
+    <div class="rounded bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-3">
+      <div class="text-xs text-slate-500">Verified (OCR == VLM)?</div>
+      <div class="text-2xl font-semibold">
+        {% if rows | selectattr('verified') | list | length %}<span class="text-emerald-500">yes</span>{% else %}<span class="text-slate-400">no</span>{% endif %}
+      </div>
+    </div>
+    <div class="rounded bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-3">
+      <div class="text-xs text-slate-500">First seen</div>
+      <div class="text-sm font-mono">{{ rows[-1].first_seen | fmt_time }}</div>
+    </div>
+  </div>
+
+  <!-- crop gallery -->
+  <h2 class="font-semibold mt-2">Crops</h2>
+  <div class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3">
+    {% for r in rows %}
+      {% if r.crop_path %}
+        <div class="rounded overflow-hidden border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
+          <img src="/crops/{{ r.crop_path }}" class="w-full aspect-video object-cover" loading="lazy"/>
+          <div class="px-2 py-1 text-xs text-slate-500 flex justify-between">
+            <span>×{{ r.n_frames }}</span>
+            {% if r.verified %}<span class="badge bg-emerald-600 text-white">✓ verified</span>{% endif %}
+          </div>
+        </div>
+      {% endif %}
+    {% endfor %}
+  </div>
+
+  <h2 class="font-semibold mt-4">All sightings</h2>
+  <div class="rounded-lg overflow-hidden border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
+    <table class="w-full text-sm">
+      <thead class="bg-slate-50 dark:bg-slate-800 text-slate-500 text-xs uppercase">
+        <tr><th class="py-2 px-3 text-left">session</th><th class="py-2 px-3 text-left">track</th><th class="py-2 px-3 text-left">OCR</th><th class="py-2 px-3 text-left">VLM</th><th class="py-2 px-3 text-left">frames</th><th class="py-2 px-3 text-left">last seen</th><th class="py-2 px-3 text-left">status</th><th class="py-2 px-3 text-left">raw</th></tr>
+      </thead>
+      <tbody>
+        {% for r in rows %}
+        <tr class="border-t border-slate-100 dark:border-slate-800">
+          <td class="py-2 px-3 text-xs font-mono">{{ r.session_id[:8] }}</td>
+          <td class="py-2 px-3 font-mono">#{{ r.track_id }}</td>
+          <td class="py-2 px-3 font-mono">{{ r.plate_text or '—' }}</td>
+          <td class="py-2 px-3 font-mono text-slate-600 dark:text-slate-300">{{ r.vlm_text or '—' }}</td>
+          <td class="py-2 px-3">×{{ r.n_frames }}</td>
+          <td class="py-2 px-3 text-xs text-slate-500 whitespace-nowrap">{{ r.last_seen | fmt_time }}</td>
+          <td class="py-2 px-3">{% if r.verified %}<span class="badge bg-emerald-600 text-white">✓</span>{% elif r.vlm_text %}<span class="badge bg-amber-100 text-amber-800">≠</span>{% else %}—{% endif %}</td>
+          <td class="py-2 px-3 text-xs text-slate-500 font-mono">{{ r.raw_text }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

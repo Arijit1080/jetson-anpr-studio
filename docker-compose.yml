@@ -1,0 +1,92 @@
+# Jetson ANPR Studio — production compose file.
+#
+# This is the "just run it" config: pulls the prebuilt image from GHCR,
+# mounts the CSI camera + USB camera devices, persists the SQLite DB and
+# crop files to a named volume, and restarts on boot.
+#
+# Usage:
+#   docker compose up -d            # start in background
+#   docker compose logs -f          # tail logs
+#   docker compose down             # stop and remove containers
+#   docker compose pull             # fetch a new image version
+#
+# For local development with hot-reload code editing, see
+# docker-compose.dev.yml.
+
+services:
+  sparkler:
+    # ────────────────────────────────────────────────────────────────
+    # Image — pulled from your GitHub Container Registry.
+    # Tag options:
+    #   :latest         → most recent main-branch build (default)
+    #   :sha-abc1234    → specific commit
+    #   :v1.0.0         → tagged release (immutable)
+    #   :latest@sha256: → digest-pinned for max safety
+    # ────────────────────────────────────────────────────────────────
+    image: ghcr.io/arijit1080/jetson-anpr-studio:latest
+    container_name: sparkler
+    hostname: sparkler
+
+    # ────────────────────────────────────────────────────────────────
+    # NVIDIA runtime — gives the container access to the Orin GPU.
+    # Requires nvidia-container-toolkit on the host (ships with JetPack).
+    # ────────────────────────────────────────────────────────────────
+    runtime: nvidia
+    environment:
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: all
+      # PYTORCH_CUDA_ALLOC_CONF helps Florence-2 fit alongside YOLO+OCR
+      # on the 8 GB Orin Nano.
+      PYTORCH_CUDA_ALLOC_CONF: expandable_segments:True
+
+    # ────────────────────────────────────────────────────────────────
+    # CSI (IMX219 / IMX477) ribbon-cable camera access.
+    # nvarguscamerasrc talks to the host's Argus daemon over this Unix
+    # socket; without the mount, only USB/RTSP/file sources work.
+    # privileged: true is required because nvarguscamerasrc opens raw
+    # device nodes that aren't exposed individually.
+    # ────────────────────────────────────────────────────────────────
+    privileged: true
+    volumes:
+      - /tmp/argus_socket:/tmp/argus_socket
+      - sparkler_runs:/app/sparkler/runs
+      - sparkler_models:/opt/models
+      # Optional: persist config.yaml across image upgrades.  Comment
+      # out if you'd rather the image's defaults always win.
+      - sparkler_config:/app/sparkler/config
+
+    # USB webcams — list each /dev/videoN you have plugged in.
+    # The container will gracefully ignore missing nodes.
+    devices:
+      - /dev/video0:/dev/video0
+      # - /dev/video1:/dev/video1     # uncomment for a second USB cam
+      # - /dev/video2:/dev/video2
+
+    # ────────────────────────────────────────────────────────────────
+    # Networking
+    # ────────────────────────────────────────────────────────────────
+    ports:
+      - "8080:8080"      # Sparkler web UI
+
+    # ────────────────────────────────────────────────────────────────
+    # Lifecycle
+    # ────────────────────────────────────────────────────────────────
+    restart: unless-stopped
+    stop_grace_period: 10s
+
+    # Optional: cap memory so an OOM doesn't take down the whole Jetson.
+    # The Orin Nano has 8 GB shared CPU+GPU; leaving ~2 GB for the OS
+    # is sensible.
+    # mem_limit: 6g
+
+# ──────────────────────────────────────────────────────────────────
+# Named volumes — managed by Docker, survive `compose down` (use
+# `compose down -v` to also delete them).
+# ──────────────────────────────────────────────────────────────────
+volumes:
+  sparkler_runs:         # SQLite DB + crop archive + uploads
+    name: sparkler_runs
+  sparkler_models:       # Florence-2 / paddle / fast-plate weights
+    name: sparkler_models
+  sparkler_config:       # config.yaml so settings persist across upgrades
+    name: sparkler_config

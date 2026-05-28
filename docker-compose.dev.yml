@@ -1,0 +1,47 @@
+# Jetson ANPR Studio — development overlay.
+#
+# Use together with docker-compose.yml for hot-reload development:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up
+#
+# What this overrides:
+#   - `image:` replaced with `build:` so the image is built locally from
+#     the Dockerfile in this repo.  Edit the Dockerfile → rebuild.
+#   - `alpr/` and `sparkler/` are bind-mounted from your workstation so
+#     Python file changes show up live in the container.
+#   - uvicorn runs with --reload so the FastAPI app auto-restarts on edit.
+#   - Container name uses a `-dev` suffix so it doesn't collide with a
+#     production container running on the same machine.
+
+services:
+  sparkler:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+      args:
+        # Override base image tag from the command line if needed:
+        #   docker compose ... build --build-arg L4T_TAG=r36.4.0
+        L4T_TAG: r36.4.0
+
+    # Don't pull the GHCR image — we're building locally.
+    image: jetson-anpr-studio:dev
+    container_name: sparkler-dev
+
+    # Bind-mount source so edits show up without rebuilding the image.
+    volumes:
+      - ./alpr:/app/alpr
+      - ./sparkler:/app/sparkler
+      # Keep the prod volumes too:
+      - /tmp/argus_socket:/tmp/argus_socket
+      - sparkler_runs:/app/sparkler/runs
+      - sparkler_models:/opt/models
+
+    # Run uvicorn with --reload so editing pipeline.py / app.py
+    # auto-restarts the server in ~2s.
+    command: >
+      uvicorn app:app
+        --host 0.0.0.0
+        --port 8080
+        --reload
+        --reload-dir /app/sparkler
+        --reload-dir /app/alpr

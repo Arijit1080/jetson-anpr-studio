@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="space-y-4" x-data="{ confirmClear: false }">
+  <div class="flex flex-wrap items-end gap-3">
+    <h1 class="text-2xl font-semibold">Detection log</h1>
+    <form class="ml-auto flex gap-2 items-center flex-wrap" action="/log" method="get">
+      <input type="text" name="q" value="{{ q }}" placeholder="search plate text…"
+             class="px-3 py-2 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm w-56"/>
+      <label class="text-sm flex items-center gap-2">
+        <input type="checkbox" name="valid" value="1" {% if valid_only %}checked{% endif %}/>
+        verified only
+      </label>
+      <button class="px-3 py-2 rounded bg-amber-500 text-white text-sm">Search</button>
+      <a href="/export/csv"        class="text-sm hover:underline">⤓ CSV</a>
+      <a href="/export/json"       class="text-sm hover:underline">⤓ JSON</a>
+      <a href="/export/crops.zip"  class="text-sm hover:underline">⤓ crops .zip</a>
+      <button type="button" @click="confirmClear = true"
+              class="px-3 py-2 rounded bg-rose-600 text-white text-sm">
+        🗑 Clear all
+      </button>
+    </form>
+  </div>
+
+  <!-- clear-all confirmation -->
+  <div x-show="confirmClear" x-transition
+       class="rounded border border-rose-400 dark:border-rose-700 bg-rose-50 dark:bg-rose-900/30 p-4">
+    <p class="text-sm mb-3">
+      Permanently delete <b>every</b> detection in the log? Crops on disk can also be wiped.
+    </p>
+    <form method="post" action="/api/clear/all" class="flex flex-wrap gap-2 items-center">
+      <label class="text-sm flex items-center gap-2">
+        <input type="checkbox" name="also_crops" value="1" checked>
+        also delete crop image files
+      </label>
+      <div class="ml-auto flex gap-2">
+        <button type="button" @click="confirmClear = false"
+                class="px-3 py-1.5 rounded bg-slate-200 dark:bg-slate-700 text-sm">Cancel</button>
+        <button type="submit" class="px-3 py-1.5 rounded bg-rose-600 text-white text-sm">Yes, delete all</button>
+      </div>
+    </form>
+  </div>
+
+  <p class="text-xs text-slate-500">{{ rows | length }} rows shown (limit 200).</p>
+
+  <div class="overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
+    <table class="w-full text-sm">
+      <thead class="bg-slate-50 dark:bg-slate-800 text-slate-500 text-xs uppercase">
+        <tr>
+          <th class="py-2 px-3 text-left">crop</th>
+          <th class="py-2 px-3 text-left">OCR</th>
+          <th class="py-2 px-3 text-left">VLM</th>
+          <th class="py-2 px-3 text-left">status</th>
+          <th class="py-2 px-3 text-left">frames</th>
+          <th class="py-2 px-3 text-left">last seen</th>
+          <th class="py-2 px-3 text-left">session</th>
+          <th class="py-2 px-3 text-left">det / ocr</th>
+          <th class="py-2 px-3 text-right">▾</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in rows %}
+        <tr class="border-t border-slate-100 dark:border-slate-800" id="row-{{ r.id }}">
+          <td class="py-2 px-3">
+            {% if r.crop_path %}
+              <a href="/plate/{{ r.plate_text }}">
+                <img src="/crops/{{ r.crop_path }}" class="h-8 w-14 object-cover rounded" loading="lazy"/>
+              </a>
+            {% else %}
+              <div class="h-8 w-14 rounded bg-slate-200 dark:bg-slate-800"></div>
+            {% endif %}
+          </td>
+          <td class="py-2 px-3 font-mono"><a href="/plate/{{ r.plate_text }}" class="hover:underline">{{ r.plate_text or '—' }}</a></td>
+          <td class="py-2 px-3 font-mono text-slate-600 dark:text-slate-300">{{ r.vlm_text or '—' }}</td>
+          <td class="py-2 px-3">
+            {% if r.verified %}<span class="badge bg-emerald-600 text-white">✓ verified</span>
+            {% elif r.vlm_text %}<span class="badge bg-amber-100 text-amber-800">mismatch</span>
+            {% else %}<span class="badge bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-300">OCR only</span>
+            {% endif %}
+          </td>
+          <td class="py-2 px-3">×{{ r.n_frames }}</td>
+          <td class="py-2 px-3 text-xs text-slate-500 whitespace-nowrap">{{ r.last_seen | fmt_time }}</td>
+          <td class="py-2 px-3 text-xs text-slate-500 font-mono">{{ r.session_id[:8] }}</td>
+          <td class="py-2 px-3 text-xs">{{ "%.2f"|format(r.det_conf or 0) }} / {{ "%.2f"|format(r.ocr_conf or 0) }}</td>
+          <td class="py-2 px-3 text-right">
+            <button title="Delete this row"
+                    onclick="if(confirm('Delete this row?')) {
+                      fetch('/api/clear/{{ r.id }}', {method:'POST'}).then(_ => document.getElementById('row-{{ r.id }}').remove());
+                    }"
+                    class="text-slate-400 hover:text-rose-500 text-sm px-2">✕</button>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="9" class="py-8 text-center text-slate-500 text-sm">No matching detections.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

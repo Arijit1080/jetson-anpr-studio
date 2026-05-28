@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="max-w-2xl">
+  <h1 class="text-2xl font-semibold mb-4">Settings</h1>
+  <form method="post" action="/api/settings"
+        class="space-y-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-5">
+
+    <div class="grid grid-cols-2 gap-4">
+      <label class="text-sm space-y-1">
+        <span class="block text-slate-500 dark:text-slate-400">Theme</span>
+        <select name="theme" class="w-full p-2 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800">
+          <option value="dark"  {% if cfg.ui.theme == 'dark' %}selected{% endif %}>Dark</option>
+          <option value="light" {% if cfg.ui.theme == 'light' %}selected{% endif %}>Light</option>
+        </select>
+      </label>
+
+      <label class="text-sm space-y-1">
+        <span class="block text-slate-500 dark:text-slate-400">Play sound on verified plate</span>
+        <select name="play_sound" class="w-full p-2 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800">
+          <option value="1" {% if cfg.ui.play_sound_on_detect %}selected{% endif %}>Yes</option>
+          <option value="0" {% if not cfg.ui.play_sound_on_detect %}selected{% endif %}>No</option>
+        </select>
+      </label>
+
+      <label class="text-sm space-y-1">
+        <span class="block text-slate-500 dark:text-slate-400">Keep logs (days)</span>
+        <input type="number" name="keep_log_days" value="{{ cfg.ui.keep_log_days }}"
+               class="w-full p-2 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800"/>
+      </label>
+
+      <label class="text-sm space-y-1">
+        <span class="block text-slate-500 dark:text-slate-400">Crops max (GB)</span>
+        <input type="number" step="0.1" name="crops_max_gb" value="{{ cfg.ui.crops_max_gb }}"
+               class="w-full p-2 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800"/>
+      </label>
+
+      <label class="text-sm space-y-1 col-span-2">
+        <span class="block text-slate-500 dark:text-slate-400">Country (regex + watermark + char-fix rules)</span>
+        <select name="country" class="w-full p-2 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800">
+          <option value="IN" {% if cfg.pipeline.country == 'IN' %}selected{% endif %}>India</option>
+          <option value="UK" {% if cfg.pipeline.country == 'UK' %}selected{% endif %}>United Kingdom</option>
+          <option value="US" {% if cfg.pipeline.country == 'US' %}selected{% endif %}>United States</option>
+          <option value="EU" {% if cfg.pipeline.country == 'EU' %}selected{% endif %}>Europe (generic)</option>
+          <option value="XX" {% if cfg.pipeline.country == 'XX' %}selected{% endif %}>Generic / any</option>
+        </select>
+      </label>
+
+      <label class="text-sm space-y-1 col-span-2">
+        <span class="block text-slate-500 dark:text-slate-400">VLM model (Hugging Face id)</span>
+        <select name="vlm_model" class="w-full p-2 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800">
+          <option value="microsoft/Florence-2-base"  {% if cfg.pipeline.vlm_model == 'microsoft/Florence-2-base'  %}selected{% endif %}>microsoft/Florence-2-base (default, ~500 MB)</option>
+          <option value="microsoft/Florence-2-large" {% if cfg.pipeline.vlm_model == 'microsoft/Florence-2-large' %}selected{% endif %}>microsoft/Florence-2-large (~1.5 GB)</option>
+          <option value="Qwen/Qwen2-VL-2B-Instruct"  {% if cfg.pipeline.vlm_model == 'Qwen/Qwen2-VL-2B-Instruct'  %}selected{% endif %}>Qwen/Qwen2-VL-2B-Instruct (needs &gt;5 GB free GPU)</option>
+        </select>
+      </label>
+
+      <label class="text-sm space-y-1">
+        <span class="block text-slate-500 dark:text-slate-400">Voting frames before finalize</span>
+        <input type="number" name="vote_frames" value="{{ cfg.pipeline.vote_frames }}"
+               class="w-full p-2 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800"/>
+      </label>
+    </div>
+
+    <div class="pt-2">
+      <button class="px-4 py-2 rounded bg-amber-500 text-white">Save</button>
+    </div>
+  </form>
+
+  <div class="mt-6 text-xs text-slate-500 space-y-1">
+    <p>Config file: <code>~/sparkler/config.yaml</code></p>
+    <p>SQLite store: <code>~/sparkler/runs/sparkler.db</code></p>
+    <p>Crops directory: <code>~/sparkler/runs/crops/</code></p>
+  </div>
+</div>
+{% endblock %}

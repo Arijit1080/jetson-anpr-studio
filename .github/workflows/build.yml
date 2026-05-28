@@ -1,0 +1,109 @@
+name: Build & push Docker image
+
+# Builds an aarch64 (Jetson) Docker image and pushes it to GitHub Container
+# Registry (ghcr.io).  Triggers:
+#   - push to main:        builds + pushes `:latest` + `:sha-<short>`
+#   - push of a v* tag:    builds + pushes `:v1.2.3` + `:latest`
+#   - manual via UI:       builds + pushes `:manual-<run-id>`
+#
+# The cross-build uses QEMU to emulate aarch64 inside the standard
+# ubuntu-latest x86_64 runner.  First build is slow (~25-40 min), subsequent
+# builds reuse the buildx layer cache stored on GitHub (~3-8 min).
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write    # needed to push to GHCR
+
+    steps:
+      # ----------------------------------------------------------------
+      # Step 1 — free up disk on the runner.
+      # Default ubuntu-latest has ~14 GB free.  This action prunes
+      # Android SDK / .NET / Haskell / etc. to give us 50+ GB —
+      # plenty of room for our ~6.7 GB final image plus build scratch.
+      # ----------------------------------------------------------------
+      - name: Free disk space
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: true
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          swap-storage: true
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ----------------------------------------------------------------
+      # Step 2 — multi-arch build setup.
+      # QEMU lets us run aarch64 binaries on x86_64 runners (slow but
+      # works for everything except code that needs real Jetson GPU).
+      # ----------------------------------------------------------------
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        with:
+          driver-opts: image=moby/buildkit:latest
+
+      # ----------------------------------------------------------------
+      # Step 3 — log in to GHCR using the built-in GITHUB_TOKEN.
+      # No secrets to manage.
+      # ----------------------------------------------------------------
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # ----------------------------------------------------------------
+      # Step 4 — compute the image tags we'll publish.
+      # ----------------------------------------------------------------
+      - name: Compute tags
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=sha,prefix=sha-,format=short
+            type=semver,pattern=v{{version}}
+            type=semver,pattern=v{{major}}.{{minor}}
+            type=ref,event=workflow_dispatch,prefix=manual-
+
+      # ----------------------------------------------------------------
+      # Step 5 — the actual build + push.
+      # cache-from / cache-to use GitHub's free build cache backend
+      # so subsequent builds reuse layers.
+      # ----------------------------------------------------------------
+      - name: Build & push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: docker/Dockerfile
+          platforms: linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Image digest
+        run: echo "Pushed → ${{ steps.meta.outputs.tags }}"

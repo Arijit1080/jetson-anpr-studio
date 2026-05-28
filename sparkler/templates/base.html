@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en" class="{{ 'dark' if cfg.ui.theme == 'dark' else '' }}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>{% block title %}{{ cfg.ui.title }}{% endblock %}</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = { darkMode: 'class' }
+  </script>
+  <script src="https://unpkg.com/htmx.org@1.9.10" defer></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+  <style>
+    body { font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+    .badge { @apply inline-block px-2 py-0.5 rounded text-xs font-semibold; }
+    .toast-enter { transform: translateY(-1rem); opacity: 0; }
+    .toast-enter-to { transform: translateY(0); opacity: 1; transition: all .25s; }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100 min-h-screen">
+<nav class="border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
+  <div class="max-w-7xl mx-auto px-4 py-3 flex items-center gap-4">
+    <a href="/" class="font-bold text-lg tracking-tight flex items-center gap-2">
+      <span class="text-amber-500">✦</span>
+      <span>{{ cfg.ui.title }}</span>
+    </a>
+    <span class="text-xs text-slate-500 hidden sm:inline">{{ cfg.ui.subtitle }}</span>
+    <div class="flex-1"></div>
+    <a href="/"          class="text-sm hover:text-amber-500">Dashboard</a>
+    <a href="/log"       class="text-sm hover:text-amber-500">Log</a>
+    <a href="/settings"  class="text-sm hover:text-amber-500">Settings</a>
+    <div class="relative">
+      <a href="/export/csv" class="text-sm hover:text-amber-500">⤓ CSV</a>
+    </div>
+  </div>
+</nav>
+
+<main class="max-w-7xl mx-auto px-4 py-6">{% block content %}{% endblock %}</main>
+
+<!-- toasts -->
+<div id="toast-region" class="fixed top-4 right-4 z-50 space-y-2 max-w-sm"></div>
+
+<script>
+  // global event source — drives toasts + any page-specific listeners
+  window.sparkler = window.sparkler || {};
+  if (!window.sparkler.es) {
+    window.sparkler.es = new EventSource("/events");
+    window.sparkler.listeners = [];
+    window.sparkler.es.onmessage = (e) => {
+      let evt = {};
+      try { evt = JSON.parse(e.data); } catch (_) { return; }
+      // Toast notifications removed by user request.  Pages still listen via
+      // window.sparkler.subscribe(fn) to refresh their data when needed.
+      window.sparkler.listeners.forEach(fn => { try { fn(evt); } catch(_){} });
+    };
+  }
+  window.sparkler.subscribe = fn => { window.sparkler.listeners.push(fn); };
+</script>
+
+{% block scripts %}{% endblock %}
+</body>
+</html>

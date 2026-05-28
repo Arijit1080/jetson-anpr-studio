@@ -1,0 +1,47 @@
+# What NOT to ship into the docker build context.
+# Smaller context = faster builds + smaller image layers.
+
+# data + runtime
+**/runs/
+**/crops/
+**/uploads/
+**/frames/
+*.db
+*.db-journal
+*.db-wal
+
+# python
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+**/*.pyd
+.python-version
+.venv/
+venv/
+env/
+
+# generated TRT engines (rebuilt on container start)
+**/*.engine
+
+# editor / OS clutter
+.DS_Store
+*.swp
+.idea/
+.vscode/
+
+# git
+.git/
+.gitignore
+.gitattributes
+
+# CI / docs (irrelevant inside the image)
+.github/
+docs/
+README.md
+LICENSE
+*.md
+
+# old / backup
+*.bak
+*.orig
+_smoke_*.py
