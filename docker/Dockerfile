@@ -56,19 +56,25 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # ---------------------------------------------------------------------------
 # pypi.jetson-ai-lab.io hosts the Jetson AI Lab wheel index.
 #
-# Critical: we pin torch==2.8.0 specifically.  jetson-ai-lab now serves
-# its /jp6/cu126/ slot with cu130-built wheels for everything 2.9.1+
-# (they silently transitioned during the CUDA 13 release).  Only 2.8.0
-# is actually cu126.  Verified live on a JetPack 6.2 Jetson:
-#   torch.__version__       == '2.8.0'
-#   torch.version.cuda      == '12.6'
+# Critical: install torch + torchvision from DIRECT wheel URLs (not via
+# pip's index resolver).  Two reasons:
+#
+# 1. jetson-ai-lab now serves cu130-built wheels in its /jp6/cu126/ slot
+#    for everything 2.9.1+.  Only 2.8.0 is actually cu126.  Anything
+#    newer makes torch.cuda.is_available() return False on JetPack 6.x.
+#
+# 2. When `--extra-index-url https://pypi.org/simple/` is added (for
+#    downstream pip deps), pip's resolver picks PyPI's `2.8.0+cpu` over
+#    jetson-ai-lab's `2.8.0` because the `+cpu` local tag is considered
+#    "higher".  The container ends up with a CPU-only PyTorch.  Direct
+#    URL install bypasses the whole resolver and forces the right wheel.
+#
+# Verified live on a JetPack 6.2 Jetson:
+#   torch.__version__       == '2.8.0'  (with CUDA 12.6 built in)
 #   torch.cuda.is_available() == True
-# torchvision 0.23.0 is the paired release.
-ARG TORCH_INDEX=https://pypi.jetson-ai-lab.io/jp6/cu126/+simple/
 RUN pip3 install \
-        --index-url ${TORCH_INDEX} \
-        --extra-index-url https://pypi.org/simple/ \
-        "torch==2.8.0" "torchvision==0.23.0"
+    'https://pypi.jetson-ai-lab.io/jp6/cu126/+f/62a/1beee9f2f1470/torch-2.8.0-cp310-cp310-linux_aarch64.whl' \
+    'https://pypi.jetson-ai-lab.io/jp6/cu126/+f/907/c4c1933789645/torchvision-0.23.0-cp310-cp310-linux_aarch64.whl'
 
 # Pin numpy < 2 — the system cv2 4.8 was built against numpy 1.x ABI,
 # and torch < 2.12 was also compiled against numpy 1.x.
