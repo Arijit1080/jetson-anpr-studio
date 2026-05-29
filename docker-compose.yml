@@ -54,6 +54,18 @@ services:
       # Optional: persist config.yaml across image upgrades.  Comment
       # out if you'd rather the image's defaults always win.
       - sparkler_config:/app/sparklers_anpr/config
+      # Persist /app/alpr/ — Docker named volume gets initialised from
+      # the image's /app/alpr/ contents on first mount (so the bundled
+      # .pt YOLO weights end up in the volume), and then the .engine
+      # files compiled by regen_engines.py at first start ALSO end up
+      # in the volume.  Result: TensorRT engines persist across every
+      # `docker compose down`, `up --force-recreate`, and image upgrade
+      # — that ~7-minute one-time compile only happens ONCE per Jetson.
+      #
+      # Trade-off: if a new image ships an updated .pt weight file, the
+      # volume's old copy wins.  Force a refresh with:
+      #   docker compose down && docker volume rm sparkler_alpr && docker compose up -d
+      - sparkler_alpr:/app/alpr
 
     # USB webcams — list each /dev/videoN you have plugged in.
     # The container will gracefully ignore missing nodes.
@@ -90,3 +102,6 @@ volumes:
     name: sparkler_models
   sparkler_config:       # config.yaml so settings persist across upgrades
     name: sparkler_config
+  sparkler_alpr:         # .pt weights + compiled .engine files (TRT
+                         # compilation persists across container recreate)
+    name: sparkler_alpr
