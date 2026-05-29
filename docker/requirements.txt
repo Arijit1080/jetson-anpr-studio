@@ -32,6 +32,13 @@ fast-plate-ocr>=0.3,<0.5
 # ---------- ByteTrack tracking dep used by ultralytics ----------
 lap>=0.5.0
 
+# ---------- ONNX (needed for ultralytics YOLO -> TensorRT export) ----------
+# Without these, regen_engines.py fails on first container start with
+# 'No module named onnx' and falls back to slow .pt inference.  TRT
+# engine export goes via ONNX as the intermediate format.
+onnx>=1.12.0,<2.0.0
+onnxslim>=0.1.71
+
 # ---------- HTTP + utilities ----------
 httpx>=0.27
 requests>=2.32
