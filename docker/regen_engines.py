@@ -26,8 +26,25 @@ def needs_regen(pt_path: Path, engine_path: Path) -> bool:
     return engine_path.stat().st_mtime < pt_path.stat().st_mtime
 
 
+# YOLO11 weights this size or smaller will reliably TRT-compile on the
+# Orin Nano 8 GB (verified with the YOLO11-nano plate detector at 5 MB).
+# Anything bigger (e.g. YOLO11-L at 50 MB) needs ~1+ GB of GPU workspace
+# during engine optimization, which doesn't fit alongside the rest of the
+# container's CUDA context on a 7.6 GiB-visible GPU.  Such models still
+# load fine from .pt at runtime, just slower per frame.  Larger devices
+# (Orin NX, AGX Orin) can override this with an env var.
+MAX_PT_SIZE_MB = int(os.environ.get("REGEN_ENGINES_MAX_PT_MB", "20"))
+
+
 def regen(pt_path: Path) -> bool:
     """Use ultralytics to export `.pt` → `.engine`. Returns True on success."""
+    size_mb = pt_path.stat().st_size / (1024 * 1024)
+    if size_mb > MAX_PT_SIZE_MB:
+        print(f"[regen_engines] SKIP {pt_path.name} "
+              f"({size_mb:.1f} MB > MAX_PT_SIZE_MB={MAX_PT_SIZE_MB}); "
+              f"will fall back to .pt at runtime (slower).  "
+              f"Override with REGEN_ENGINES_MAX_PT_MB=<n> on larger Jetsons.")
+        return True   # not a failure — intentional skip
     print(f"[regen_engines] exporting {pt_path.name} → TensorRT engine "
           f"(this takes ~60s on Orin Nano)")
     try:
