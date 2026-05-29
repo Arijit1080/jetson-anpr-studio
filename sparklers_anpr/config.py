@@ -16,8 +16,18 @@ import yaml
 
 HERE = Path(__file__).resolve().parent
 CONFIG_PATH = HERE / "config.yaml"
-DEFAULT_DETECTOR = "/home/jetson/alpr/license-plate-finetune-v1n.engine"
-ALPR_MODULE_DIR = "/home/jetson/alpr"   # for reusing core.py, db.py
+
+# Where the YOLO + OCR pipeline (alpr/) is located on the filesystem.
+# Defaults to the in-container path; override via ALPR_DIR=/path/to/alpr
+# for bare-metal installs (e.g. ALPR_DIR=/home/jetson/jetson-anpr-studio/alpr).
+ALPR_DIR = os.environ.get("ALPR_DIR", "/app/alpr")
+ALPR_MODULE_DIR = ALPR_DIR   # backwards-compat alias
+
+# YOLOv8 OIV7 fallback model (optional — only used if you've copied an
+# external Open Images v7 .engine into the container at this path).
+YOLOV8_DIR = os.environ.get("YOLOV8_DIR", "/app/yolov8")
+
+DEFAULT_DETECTOR = f"{ALPR_DIR}/license-plate-finetune-v1n.engine"
 
 
 @dataclass
@@ -35,11 +45,11 @@ class PipelineConfig:
     # detectors available in the UI dropdown
     detectors_available: list[dict] = field(default_factory=lambda: [
         {"label": "YOLO11-n plate (8 MB · fastest)",
-         "path": "/home/jetson/alpr/license-plate-finetune-v1n.engine"},
+         "path": f"{ALPR_DIR}/license-plate-finetune-v1n.engine"},
         {"label": "YOLO11-L plate (52 MB · most accurate)",
-         "path": "/home/jetson/alpr/license-plate-finetune-v1l.engine"},
+         "path": f"{ALPR_DIR}/license-plate-finetune-v1l.pt"},
         {"label": "YOLOv8-OIV7-x (OIV7 fallback)",
-         "path": "/home/jetson/yolov8/yolov8x-oiv7.engine"},
+         "path": f"{YOLOV8_DIR}/yolov8x-oiv7.engine"},
     ])
 
     ocr_backends_available: list[dict] = field(default_factory=lambda: [
