@@ -14,26 +14,21 @@
 # Run with: see docker-compose.yml
 
 ARG L4T_TAG=r36.4.0
-# dustynv/l4t-pytorch is a community-maintained base image by NVIDIA
-# developer relations.  It bundles a known-good cu126 PyTorch +
-# torchvision + numpy + libopenblas + the JetPack 6.x runtime, all
-# tested against the actual driver.  Using it eliminates a long tail
-# of "torch installs fine at build time but is missing a native lib at
-# runtime" surprises that the bare l4t-jetpack base would otherwise
-# force us to chase one by one.
-FROM dustynv/l4t-pytorch:${L4T_TAG}
+FROM nvcr.io/nvidia/l4t-jetpack:${L4T_TAG}
 
 # ---------------------------------------------------------------------------
-# Stage 0 — supplemental system packages (apt)
+# Stage 0 — system packages (apt)
 # ---------------------------------------------------------------------------
-# The dustynv/l4t-pytorch base already ships with python3 + many native
-# libs (libopenblas, libcudart, libcudnn, libnvinfer, etc.).  We still
-# need:
-#   - python3-opencv: SYSTEM OpenCV with GStreamer support, for the
-#     IMX219 / IMX477 CSI ribbon cameras.  Pip-installed opencv-python
-#     wheels do NOT include GStreamer.
-#   - GStreamer plugins (good/bad/ugly) + nvarguscamerasrc helpers.
+# We need:
+#   - python3 (3.10 on this base)
+#   - python3-opencv: the SYSTEM OpenCV 4.x with GStreamer support.  This is
+#     critical: pip-installed opencv-python doesn't have GStreamer, so CSI
+#     camera input wouldn't work.
+#   - GStreamer plugins (good/bad/ugly) + nvidia's nvarguscamerasrc helpers
+#     so the IMX219 / IMX477 ribbon cameras feed through cleanly.
 #   - libgl1 / libglib2.0-0 are runtime deps of OpenCV.
+#   - libopenblas0-pthread: torch links to libopenblas.so.0 at load time
+#     on aarch64 (otherwise `import torch` fails with ImportError).
 #   - tzdata for sane timestamp printing.
 # ---------------------------------------------------------------------------
 ENV DEBIAN_FRONTEND=noninteractive \
@@ -42,6 +37,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PIP_NO_CACHE_DIR=1
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
+        python3 python3-pip python3-dev python3-setuptools python3-wheel \
         python3-opencv \
         gstreamer1.0-tools gstreamer1.0-plugins-base \
         gstreamer1.0-plugins-good gstreamer1.0-plugins-bad \
@@ -50,16 +46,35 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libgl1 libglib2.0-0 libsm6 libxext6 libxrender1 \
         ffmpeg \
         tzdata ca-certificates curl \
+        build-essential pkg-config \
+        libopenblas0-pthread \
     && rm -rf /var/lib/apt/lists/*
 
 # ---------------------------------------------------------------------------
-# Stage 1 — pin numpy (belt-and-suspenders)
+# Stage 1 — PyTorch + numpy (direct wheel URLs)
 # ---------------------------------------------------------------------------
-# dustynv's base already pins numpy < 2, but a transitive dep from
-# requirements.txt could try to bump it.  We force the 1.26.4 line
-# explicitly because the system cv2 was built against numpy 1.x ABI.
-# ---------------------------------------------------------------------------
-RUN pip3 install --force-reinstall --no-deps "numpy==1.26.4"
+# Install torch + torchvision from DIRECT wheel URLs on jetson-ai-lab.io
+# (NOT via pip's index resolver).  Two reasons:
+#
+# 1. jetson-ai-lab serves cu130-built wheels in its /jp6/cu126/ slot for
+#    everything 2.9.1+.  Only 2.8.0 is actually cu126.  Anything newer
+#    makes torch.cuda.is_available() return False on JetPack 6.x.
+#
+# 2. When `--extra-index-url https://pypi.org/simple/` is added (for the
+#    downstream requirements.txt pip install), pip's resolver picks
+#    PyPI's `2.8.0+cpu` over jetson-ai-lab's `2.8.0` because the `+cpu`
+#    local tag is considered "higher" version.  Direct URL install
+#    bypasses the resolver entirely and forces the right CUDA wheel.
+#
+# Verified live on a JetPack 6.2 Jetson:
+#   torch.__version__       == '2.8.0'  (with CUDA 12.6 built in)
+#   torch.cuda.is_available() == True
+RUN pip3 install \
+    'https://pypi.jetson-ai-lab.io/jp6/cu126/+f/62a/1beee9f2f1470/torch-2.8.0-cp310-cp310-linux_aarch64.whl' \
+    'https://pypi.jetson-ai-lab.io/jp6/cu126/+f/907/c4c1933789645/torchvision-0.23.0-cp310-cp310-linux_aarch64.whl'
+
+# Pin numpy < 2 — the system cv2 was built against numpy 1.x ABI.
+RUN pip3 install "numpy==1.26.4"
 
 # ---------------------------------------------------------------------------
 # Stage 2 — Python ML stack (requirements.txt)
