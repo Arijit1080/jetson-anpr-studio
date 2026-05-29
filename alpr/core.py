@@ -272,14 +272,20 @@ class ALPRPipeline:
     def _ocr_fast(self, crop: np.ndarray) -> tuple[str, str, float]:
         """fast-plate-ocr: plate-specific, ~6 ms on CPU.
 
-        The model handles its own internal resize, so we just hand it the
-        full plate crop.  Returns clean=raw=cleaned-text and confidence=1.0
-        (the library doesn't expose per-prediction confidence at this API).
+        fast-plate-ocr 0.3.0 (ONNXPlateRecognizer) requires grayscale input
+        shape (H, W) or (H, W, 1).  Earlier versions (LicensePlateRecognizer)
+        accepted BGR directly.  We always convert to grayscale here so both
+        APIs work.  The model handles its own internal resize.
         """
+        if crop.ndim == 3 and crop.shape[2] == 3:
+            crop = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
+        # newer fast-plate-ocr returns a list[str] directly; older returns
+        # objects with .plate attribute.  Handle both.
         preds = self._fast.run(crop)
         if not preds:
             return "", "", 0.0
-        raw = preds[0].plate
+        first = preds[0]
+        raw = first if isinstance(first, str) else getattr(first, "plate", "")
         clean = self._clean_text(raw)
         # fast-plate-ocr's `char_probs` is None by default; treat any prediction
         # as confidence 1.0 (downstream voting+regex still applies).
