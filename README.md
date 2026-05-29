@@ -226,28 +226,55 @@ jetson-anpr-studio/
 
 ## Building the image yourself
 
-Every push to `main` triggers GitHub Actions to cross-build the aarch64 image and push it to `ghcr.io/arijit1080/jetson-anpr-studio:latest`. You can also build locally:
+There are two supported workflows; choose based on what trade-off bothers you most.
 
-### On a Mac (cross-compile via QEMU)
+### Recommended — Build natively on the Jetson, push to GHCR
+
+This is how the current `:latest` was built. Native build means every `import torch` and `RUN python ...` step actually runs against the Jetson's real CUDA driver, so runtime mismatches surface during build (15-min cycles) instead of after a 50-min CI build + pull. Once the local image works, push it to GHCR as the shareable artifact.
+
+```bash
+# On the Jetson — clone (or git pull) the repo, then:
+cd ~/jetson-anpr-studio
+docker build -f docker/Dockerfile -t ghcr.io/arijit1080/jetson-anpr-studio:latest .
+# 12-20 min on Orin Nano (full); ~3-5 min on subsequent code-only changes.
+
+# Test locally first:
+docker compose up -d
+docker compose logs -f         # watch engine regen + verify
+docker compose down
+
+# Once happy, push to GHCR.
+# First time on a machine: `docker login ghcr.io -u <user>` with a PAT
+# that has write:packages scope.
+docker push ghcr.io/arijit1080/jetson-anpr-studio:latest
+
+# Also push a SHA-pinned tag for rollback safety:
+SHA=$(git rev-parse --short HEAD)
+docker tag  ghcr.io/arijit1080/jetson-anpr-studio:latest \
+            ghcr.io/arijit1080/jetson-anpr-studio:sha-$SHA
+docker push ghcr.io/arijit1080/jetson-anpr-studio:sha-$SHA
+```
+
+Disk note: the Orin Nano's 56 GB eMMC fills up quickly during builds. Free ≥ 15 GB before starting (`docker image prune -af` is your friend). The very large `dustynv/l4t-pytorch` base extracts to ~14 GB and won't fit — stick with `nvcr.io/nvidia/l4t-jetpack:r36.4.0` (~3 GB) which is what the current Dockerfile uses.
+
+### Alternative — CI cross-build via GitHub Actions
+
+Every push to `main` triggers `.github/workflows/build.yml` to cross-build the aarch64 image via QEMU and push it to GHCR. Useful for hands-off "ship from any commit" but slower (~25-30 min per build) and runtime issues only show up after a Jetson pull. Some library mismatches (CUDA driver version, native lib presence) only surface at runtime on a real Jetson, so the CI build can succeed while the resulting image fails to start. We use native build as the primary path for that reason.
+
+Skip CI on a specific commit with `[skip ci]` in the commit subject.
+
+### Alternative — Cross-build on a Mac
 
 ```bash
 docker buildx create --use --name jetson-builder
 docker buildx build \
     --platform linux/arm64 \
     -f docker/Dockerfile \
-    -t jetson-anpr-studio:local \
-    --load .
+    -t ghcr.io/arijit1080/jetson-anpr-studio:latest \
+    --push .
 ```
 
-Takes ~40 min on an M-series Mac. Result lives in your local Docker. You can `docker save` it to a tar and `scp` to a Jetson.
-
-### On the Jetson natively
-
-```bash
-docker build -f docker/Dockerfile -t jetson-anpr-studio:local .
-```
-
-Faster (~25 min, no QEMU) but needs ~15 GB free disk.
+Slowest (~40 min on M-series Mac due to QEMU), same caveat as CI re: runtime-only mismatches.
 
 ---
 
@@ -258,10 +285,14 @@ A few opinionated choices that came out of building this:
 - **PyTorch from NVIDIA's Jetson wheel index**, not from PyPI. The PyPI wheels are CPU-only on aarch64; NVIDIA's wheel ships with CUDA 12.6 support.
 - **paddlepaddle pinned to 2.6.2.** The 3.x line segfaults inside its PIR loader on aarch64 — confirmed reproducible on Orin Nano. The 2.x line is stable and 2.6.2 is the most recent.
 - **paddleocr pinned to 2.7.3.** 2.10+ pulls in albumentations and python-docx, which transitively want to install `opencv-python` that clobbers the GStreamer-enabled system OpenCV. CSI camera support would silently break.
-- **torch pinned to exactly 2.8.0.** jetson-ai-lab's `/jp6/cu126/` index transitioned to cu130-built wheels starting with 2.9.1, even though the URL says cu126. Only 2.8.0 is genuinely a CUDA 12.6 build that matches JetPack 6.x — anything newer makes `torch.cuda.is_available()` return False.
+- **torch pinned to exactly 2.8.0 via direct wheel URL.** jetson-ai-lab's `/jp6/cu126/` index transitioned to cu130-built wheels starting with 2.9.1, even though the URL says cu126. Only 2.8.0 is genuinely a CUDA 12.6 build. *And* — pip's resolver picks PyPI's `2.8.0+cpu` over jetson-ai-lab's `2.8.0` because the `+cpu` local tag is considered "higher" version. We bypass the resolver entirely by installing from the exact wheel URL.
 - **fast-plate-ocr model name uses the v2 ID.** 0.3.0 renamed `cct-xs-v1-global-model` → `global-plates-mobile-vit-v2-model`. `alpr/core.py` uses the new name; the older string just produces a "model not found" error at session start.
+- **fast-plate-ocr 0.3+ requires grayscale input** `(H, W)` or `(H, W, 1)`. The previous `LicensePlateRecognizer` accepted BGR. `_ocr_fast` in core.py converts BGR → grayscale before calling `.run()` so both APIs work.
 - **System OpenCV (apt python3-opencv), not pip.** The pip-installed wheels don't include GStreamer, which means nvarguscamerasrc — and therefore the IMX219 / IMX477 ribbon cameras — wouldn't work. The Dockerfile force-uninstalls any pip-installed `opencv-python` / `opencv-python-headless` after the requirements install so transitive deps can't sneak it in.
 - **numpy pinned to 1.26.4.** The system cv2 was built against numpy 1.x ABI; numpy 2.x silently breaks `import cv2`.
+- **`libopenblas0-pthread` installed via apt.** PyTorch on aarch64 links to `libopenblas.so.0` at load time; without it, `import torch` fails inside the container even though it works fine on a bare-metal Jetson (where openblas is pulled in as a transitive dep of other apt packages).
+- **`onnx` + `onnxslim` in requirements.txt.** ultralytics YOLO → TensorRT engine export goes via ONNX as the intermediate format. Without these, `regen_engines.py` fails at first start with "No module named 'onnx'" and falls back to slow .pt inference.
+- **`regen_engines.py` skips `.pt` files > 20 MB.** The YOLO11-L plate detector (50 MB) sends TensorRT into an OOM loop on the Orin Nano 8 GB — TRT keeps trying to allocate ~1 GB of working memory that doesn't fit. The size guard lets the small YOLO11-n model compile (~7 min, fits easily) while skipping L gracefully. L still loads from `.pt` at runtime; just slower per frame. Override via `REGEN_ENGINES_MAX_PT_MB=<n>` on larger Jetsons (Orin NX 16 GB, AGX Orin 64 GB).
 - **TensorRT engines regenerated on first start.** Engines aren't portable across TRT minor versions, so bundling them in the image would break on any JetPack patch upgrade. The `.pt` weights are bundled instead.
 - **Multi-frame voting + VLM cross-check.** Single-frame OCR is fragile (motion blur, occlusion). Voting across 5 frames and cross-checking with Florence-2 catches most errors without needing a perfect detector.
 
