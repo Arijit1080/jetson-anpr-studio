@@ -45,6 +45,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         ffmpeg \
         tzdata ca-certificates curl \
         build-essential pkg-config \
+        libopenblas0-pthread \
     && rm -rf /var/lib/apt/lists/*
 
 # ---------------------------------------------------------------------------
