@@ -38,6 +38,14 @@ services:
       # PYTORCH_CUDA_ALLOC_CONF helps Florence-2 fit alongside YOLO+OCR
       # on the 8 GB Orin Nano.
       PYTORCH_CUDA_ALLOC_CONF: expandable_segments:True
+      # Disable PyTorch's caching allocator on Jetson.  Its NVML probe
+      # for available memory hits an `NVML_SUCCESS == r INTERNAL ASSERT
+      # FAILED at CUDACachingAllocator.cpp:1131` on Tegra (NVML has
+      # limited functionality compared to discrete NVIDIA GPUs).
+      # Disabling the cache means cudaMalloc / cudaFree each allocation
+      # — a bit slower for tensor-heavy code, but Florence-2 inference
+      # stays well under 5 s/frame which is fine for plate verification.
+      PYTORCH_NO_CUDA_MEMORY_CACHING: 1
 
     # ────────────────────────────────────────────────────────────────
     # CSI (IMX219 / IMX477) ribbon-cable camera access.
