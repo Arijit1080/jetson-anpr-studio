@@ -258,8 +258,10 @@ A few opinionated choices that came out of building this:
 - **PyTorch from NVIDIA's Jetson wheel index**, not from PyPI. The PyPI wheels are CPU-only on aarch64; NVIDIA's wheel ships with CUDA 12.6 support.
 - **paddlepaddle pinned to 2.6.2.** The 3.x line segfaults inside its PIR loader on aarch64 — confirmed reproducible on Orin Nano. The 2.x line is stable and 2.6.2 is the most recent.
 - **paddleocr pinned to 2.7.3.** 2.10+ pulls in albumentations and python-docx, which transitively want to install `opencv-python` that clobbers the GStreamer-enabled system OpenCV. CSI camera support would silently break.
-- **System OpenCV (apt python3-opencv), not pip.** The pip-installed wheels don't include GStreamer, which means nvarguscamerasrc — and therefore the IMX219 / IMX477 ribbon cameras — wouldn't work.
-- **numpy pinned to 1.26.4.** The system cv2 4.8 was built against numpy 1.x ABI; numpy 2.x silently breaks `import cv2`.
+- **torch pinned to exactly 2.8.0.** jetson-ai-lab's `/jp6/cu126/` index transitioned to cu130-built wheels starting with 2.9.1, even though the URL says cu126. Only 2.8.0 is genuinely a CUDA 12.6 build that matches JetPack 6.x — anything newer makes `torch.cuda.is_available()` return False.
+- **fast-plate-ocr model name uses the v2 ID.** 0.3.0 renamed `cct-xs-v1-global-model` → `global-plates-mobile-vit-v2-model`. `alpr/core.py` uses the new name; the older string just produces a "model not found" error at session start.
+- **System OpenCV (apt python3-opencv), not pip.** The pip-installed wheels don't include GStreamer, which means nvarguscamerasrc — and therefore the IMX219 / IMX477 ribbon cameras — wouldn't work. The Dockerfile force-uninstalls any pip-installed `opencv-python` / `opencv-python-headless` after the requirements install so transitive deps can't sneak it in.
+- **numpy pinned to 1.26.4.** The system cv2 was built against numpy 1.x ABI; numpy 2.x silently breaks `import cv2`.
 - **TensorRT engines regenerated on first start.** Engines aren't portable across TRT minor versions, so bundling them in the image would break on any JetPack patch upgrade. The `.pt` weights are bundled instead.
 - **Multi-frame voting + VLM cross-check.** Single-frame OCR is fragile (motion blur, occlusion). Voting across 5 frames and cross-checking with Florence-2 catches most errors without needing a perfect detector.
 
@@ -374,7 +376,7 @@ The `/tmp/argus_socket` mount or `privileged: true` flag was dropped. Check `doc
 Some pip operation upgraded numpy past 2.x and broke the system cv2 4.8 ABI. The container's image has numpy pinned at 1.26.4 via `docker/constraints.txt`, so this should never happen inside it — but if you've been hacking inside the container with `--no-deps` or bind-mounted Python files, run `pip install numpy==1.26.4 --force-reinstall` inside the container.
 
 **`The NVIDIA driver on your system is too old (found version 12060)` / `torch.cuda.is_available() == False`**
-You're running an image built against CUDA 13 (torch ≥ 2.12) on a Jetson with CUDA 12.6 (JetPack 6.x). The Dockerfile pins `torch < 2.12` to stay in the cu126 line — make sure you're pulling `:latest` from after that fix landed, and that your local cache isn't stuck on an older image (`docker pull ghcr.io/.../jetson-anpr-studio:latest` then `docker compose up -d --force-recreate`).
+You're running an image built against CUDA 13 (torch ≥ 2.9) on a Jetson with CUDA 12.6 (JetPack 6.x). The Dockerfile pins `torch==2.8.0` specifically — that's the last release on jetson-ai-lab's `/jp6/cu126/` index that was actually built against cu126; everything 2.9.1 and newer there silently became cu130. Make sure you're pulling `:latest` from after that fix landed (`docker pull ghcr.io/.../jetson-anpr-studio:latest` then `docker compose up -d --force-recreate`).
 
 **`ImportError: cannot import name 'LicensePlateRecognizer' from 'fast_plate_ocr'`**
 fast-plate-ocr renamed the class to `ONNXPlateRecognizer` in 0.3.0. `alpr/core.py` already handles both names via a try/except import. If you hit this anyway, you're probably running an old image — pull the latest and recreate the container.

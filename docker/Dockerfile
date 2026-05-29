@@ -54,17 +54,21 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 #   https://developer.download.nvidia.com/compute/redist/jp/v62/
 # For JetPack 6.2 (L4T R36.4) we want torch 2.5.0a0+nv24.08.
 # ---------------------------------------------------------------------------
-# pypi.jetson-ai-lab.io hosts the Jetson AI Lab wheel index.  We pin
-# torch < 2.12 to stay in the CUDA 12.6 line — jetson-ai-lab's newer
-# 2.12+ wheels were built against CUDA 13 which doesn't match JetPack
-# 6.2 / CUDA 12.6 on the Jetson, leading to
-#   torch.cuda.is_available() == False at runtime.
-# torchvision is paired with torch's matching minor version.
+# pypi.jetson-ai-lab.io hosts the Jetson AI Lab wheel index.
+#
+# Critical: we pin torch==2.8.0 specifically.  jetson-ai-lab now serves
+# its /jp6/cu126/ slot with cu130-built wheels for everything 2.9.1+
+# (they silently transitioned during the CUDA 13 release).  Only 2.8.0
+# is actually cu126.  Verified live on a JetPack 6.2 Jetson:
+#   torch.__version__       == '2.8.0'
+#   torch.version.cuda      == '12.6'
+#   torch.cuda.is_available() == True
+# torchvision 0.23.0 is the paired release.
 ARG TORCH_INDEX=https://pypi.jetson-ai-lab.io/jp6/cu126/+simple/
 RUN pip3 install \
         --index-url ${TORCH_INDEX} \
         --extra-index-url https://pypi.org/simple/ \
-        "torch<2.12" "torchvision<0.27"
+        "torch==2.8.0" "torchvision==0.23.0"
 
 # Pin numpy < 2 — the system cv2 4.8 was built against numpy 1.x ABI,
 # and torch < 2.12 was also compiled against numpy 1.x.
@@ -120,6 +124,14 @@ RUN mkdir -p /opt/models && python3 /tmp/prefetch_models.py
 # Final guard: make absolutely sure numpy is still on the 1.x line
 # after every pip install step above.  Cheap belt-and-suspenders.
 RUN pip3 install --force-reinstall --no-deps "numpy==1.26.4"
+
+# Final cleanup: forcibly remove any pip-installed OpenCV so the
+# GStreamer-enabled system OpenCV (apt python3-opencv, installed in
+# Stage 0) is the cv2 that Python sees.  Without this, transitive deps
+# from ultralytics / easyocr / fast-plate-ocr pull opencv-python 4.x
+# into /usr/local/lib/python3.10/dist-packages/cv2/ which shadows the
+# system cv2 and silently breaks CSI camera support (no GStreamer).
+RUN pip3 uninstall -y opencv-python opencv-python-headless opencv-contrib-python 2>/dev/null || true
 
 # ---------------------------------------------------------------------------
 # Stage 5 — Application code

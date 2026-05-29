@@ -70,7 +70,7 @@ class ALPRPipeline:
                  det_conf: float = 0.20,
                  plate_class_keywords: tuple[str, ...] = ("plate", "registration"),
                  ocr_backend: str = "fast",
-                 fast_model: str = "cct-xs-v1-global-model",
+                 fast_model: str = "global-plates-mobile-vit-v2-model",
                  ocr_langs: tuple[str, ...] = ("en",),
                  ocr_gpu: bool = True,
                  min_plate_area_px: int = 400,
