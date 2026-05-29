@@ -15,6 +15,11 @@ paddleocr==2.7.3
 # transitive deps that paddleocr 2.7 actually needs at import time
 decorator>=5.0
 astor>=0.8
+# paddlepaddle 2.6.2 imports opt_einsum unconditionally in paddle.tensor.einsum.
+# It pins opt-einsum==3.3.0 in its own metadata; using a different version
+# triggers a 'dependency resolver' pip warning at install time and may break
+# at runtime on some einsum codepaths.
+opt-einsum==3.3.0
 lmdb>=1.4
 rapidfuzz>=3.0
 cython>=3.0

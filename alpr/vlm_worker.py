@@ -173,10 +173,20 @@ class VLMWorker:
         print(f"  [VLM] loading {self.model_id} on {self.device} ({self.dtype}) …", flush=True)
         t0 = time.perf_counter()
         if self.backend == "florence":
+            # `attn_implementation="eager"` is critical here.  Newer transformers
+            # (>= 4.46) probe `model._supports_sdpa` on every model to decide
+            # whether to use scaled-dot-product attention.  Florence-2's
+            # community-maintained `modeling_florence2.py` (loaded via
+            # `trust_remote_code=True`) doesn't declare that attribute, so the
+            # probe raises `AttributeError: 'Florence2ForConditionalGeneration'
+            # object has no attribute '_supports_sdpa'` and the VLM worker thread
+            # dies before serving any frames.  Forcing the eager backend skips
+            # the SDPA dispatch path entirely.
             self.model = AutoModelForCausalLM.from_pretrained(
                 self.model_id,
                 torch_dtype=self.dtype,
                 trust_remote_code=True,
+                attn_implementation="eager",
             ).to(self.device)
             self.processor = AutoProcessor.from_pretrained(
                 self.model_id, trust_remote_code=True,
