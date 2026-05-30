@@ -16,6 +16,7 @@ Florence's `<OCR>` task mode; everything else assumes Qwen2-VL chat format.
 
 from __future__ import annotations
 
+import os
 import queue
 import re
 import threading
@@ -225,6 +226,13 @@ class VLMWorker:
                       f"({result.latency_s*1000:.0f} ms)", flush=True)
             except Exception as e:    # noqa: BLE001
                 print(f"  [VLM] track {track_id} ERR: {e}", flush=True)
+            finally:
+                # Free Florence-2's vision-encoder activations + transient
+                # decoder buffers between plates.  On the 8 GB Orin Nano
+                # this is the difference between "VLM works for one plate
+                # then OOMs on the next" and "VLM works for every plate".
+                if self.device == "cuda" and torch.cuda.is_available():
+                    torch.cuda.empty_cache()
 
     def _infer(self, track_id: int, crop_bgr: np.ndarray) -> VLMResult:
         rgb = cv2.cvtColor(crop_bgr, cv2.COLOR_BGR2RGB)
@@ -249,11 +257,18 @@ class VLMWorker:
                 # codepath — slightly slower per-token but Florence-2
                 # generates < 64 tokens for plate OCR, so the impact is
                 # negligible.
+                # Use greedy decode (num_beams=1) on the Orin Nano 8 GB so
+                # GPU mode fits.  Beam search with num_beams=3 needs ~2.5 GB
+                # of vision-encoder + decoder workspace per beam, which
+                # pushes total memory past what's available alongside the
+                # YOLO TensorRT engine + PyTorch CUDA overhead.  Plate OCR
+                # is unambiguous text so greedy is plenty.  Override with
+                # VLM_NUM_BEAMS=N on larger Jetsons if you want beam search.
                 out = self.model.generate(
                     input_ids=inputs["input_ids"],
                     pixel_values=inputs["pixel_values"],
                     max_new_tokens=self.max_new_tokens,
-                    num_beams=3,
+                    num_beams=int(os.environ.get("VLM_NUM_BEAMS", "1")),
                     do_sample=False,
                     use_cache=False,
                 )

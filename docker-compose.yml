@@ -35,17 +35,17 @@ services:
     environment:
       NVIDIA_VISIBLE_DEVICES: all
       NVIDIA_DRIVER_CAPABILITIES: all
-      # PYTORCH_CUDA_ALLOC_CONF helps Florence-2 fit alongside YOLO+OCR
-      # on the 8 GB Orin Nano.
-      PYTORCH_CUDA_ALLOC_CONF: expandable_segments:True
-      # Disable PyTorch's caching allocator on Jetson.  Its NVML probe
-      # for available memory hits an `NVML_SUCCESS == r INTERNAL ASSERT
-      # FAILED at CUDACachingAllocator.cpp:1131` on Tegra (NVML has
-      # limited functionality compared to discrete NVIDIA GPUs).
-      # Disabling the cache means cudaMalloc / cudaFree each allocation
-      # — a bit slower for tensor-heavy code, but Florence-2 inference
-      # stays well under 5 s/frame which is fine for plate verification.
-      PYTORCH_NO_CUDA_MEMORY_CACHING: 1
+      # Allocator config: expandable_segments keeps the caching allocator
+      # but lets it grow segments instead of failing on fragmentation,
+      # which matters when YOLO + Florence-2 + transient activations all
+      # share the 8 GB Tegra unified memory pool.
+      PYTORCH_CUDA_ALLOC_CONF: expandable_segments:True,garbage_collection_threshold:0.6
+      # Skip the NVML-based cuda availability check.  On Tegra, NVML has
+      # limited functionality and the probe sometimes returns non-success
+      # codes that cause PyTorch's caching allocator to internal-assert
+      # at CUDACachingAllocator.cpp:1131.  With NVML disabled the
+      # allocator uses cudaMemGetInfo() directly, which works on Tegra.
+      PYTORCH_NVML_BASED_CUDA_CHECK: 0
 
     # ────────────────────────────────────────────────────────────────
     # CSI (IMX219 / IMX477) ribbon-cable camera access.
