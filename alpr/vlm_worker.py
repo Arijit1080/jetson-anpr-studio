@@ -237,12 +237,25 @@ class VLMWorker:
                       for k, v in inputs.items()}
             t0 = time.perf_counter()
             with torch.inference_mode():
+                # `use_cache=False` is critical here: transformers >= 4.46
+                # switched past_key_values from the legacy tuple-of-tuples
+                # format to a `DynamicCache` instance, but Florence-2's
+                # community-maintained `modeling_florence2.py` still does
+                # `past_key_values[0][0].shape[2]` in
+                # `prepare_inputs_for_generation` (line 2197).  With the
+                # new cache that lookup returns None and raises
+                # `AttributeError: 'NoneType' object has no attribute
+                # 'shape'`.  Disabling the cache sidesteps that whole
+                # codepath — slightly slower per-token but Florence-2
+                # generates < 64 tokens for plate OCR, so the impact is
+                # negligible.
                 out = self.model.generate(
                     input_ids=inputs["input_ids"],
                     pixel_values=inputs["pixel_values"],
                     max_new_tokens=self.max_new_tokens,
                     num_beams=3,
                     do_sample=False,
+                    use_cache=False,
                 )
             raw_full = self.processor.batch_decode(out, skip_special_tokens=False)[0]
             parsed = self.processor.post_process_generation(
