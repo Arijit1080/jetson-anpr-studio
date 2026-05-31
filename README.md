@@ -40,6 +40,11 @@ Built originally as a YouTube tutorial project. Now Dockerized for one-command i
 
 ## Quick start
 
+> Three install paths. Most users want **A**.
+> - **A**: Docker, one-command install. Fastest path. (this section)
+> - **B**: Docker, manual `docker compose up`. Same image, more control. (below)
+> - **C**: No Docker at all — bare-metal Python install. See **[MANUAL_INSTALL.md](./MANUAL_INSTALL.md)** for the from-scratch walkthrough on a fresh Jetson.
+
 ### Option A — One-shot install (recommended)
 
 On a fresh Jetson:
