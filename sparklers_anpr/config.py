@@ -64,8 +64,8 @@ class PipelineConfig:
 
 @dataclass
 class UIConfig:
-    title: str = "Sparkler ANPR Studio"
-    subtitle: str = "Sparkler Ultimate Number Plate Recognition System"
+    title: str = "Sparklers ANPR Studio"
+    subtitle: str = "Sparklers Ultimate Number Plate Recognition System"
     theme: str = "dark"        # dark | light
     play_sound_on_detect: bool = True
     show_fps_overlay: bool = True
