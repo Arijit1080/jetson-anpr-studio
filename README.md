@@ -415,6 +415,9 @@ fast-plate-ocr renamed the class to `ONNXPlateRecognizer` in 0.3.0. `alpr/core.p
 **Florence-2 OOM (`exit code 137` in compose logs)**
 8 GB Orin Nano is tight. Switch to fast-plate-ocr or PaddleOCR alone (no VLM) from the dashboard. Or recreate the container so the GPU memory is fully freed: `docker compose down && docker compose up -d`. If you need VLM specifically and OOMs persist, restore the second 8 GB swapfile we dropped during disk cleanup (see the disk-management section of the project's commit history).
 
+**First VLM GPU verification after container start returns no `vlm_text` (`fast+vlm` only)**
+On the 8 GB Orin Nano, the very first call into Florence-2's CUDA path after a fresh container start hits a PyTorch internal assert in `CUDACachingAllocator.cpp:1131` — `NVML_SUCCESS == r INTERNAL ASSERT FAILED`. The `PYTORCH_NVML_BASED_CUDA_CHECK=0` env var we ship skips the NVML probe used by `cuda.is_available()` but NOT this one (it's deep inside the allocator's free-memory query). The VLM worker catches the error, logs it, and skips that single plate; every subsequent plate works fine (~1.3 s/verification). Net effect: plate #1 after container restart shows `vlm_text=""` even though OCR ran normally. Plates #2+ get the full VLM cross-check. If this matters for your workload, use `fast+vlm-cpu` instead — same Florence-2 model on CPU, ~12 s/plate but no first-call quirk.
+
 **First start hangs at "regenerating engines"**
 Engine export takes ~60 s per model on Orin Nano. If it takes >5 min, check `docker compose logs` for errors. Often `--privileged` was missed and the GPU isn't accessible from inside the container.
 
