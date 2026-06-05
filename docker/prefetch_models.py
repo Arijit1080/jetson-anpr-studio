@@ -19,6 +19,7 @@ Targets:
 from __future__ import annotations
 
 import os
+import shutil
 import sys
 import traceback
 from pathlib import Path
@@ -87,12 +88,33 @@ def fetch_paddle() -> None:
 def fetch_fast_plate() -> None:
     _section("fast-plate-ocr cct-xs-v1-global-model (~2 MB)")
     try:
-        # fast-plate-ocr 0.3+ caches under ~/.cache by default.  No env
-        # override — just let it write to the standard location and we
-        # capture it by mounting HOME.
+        # The fast_plate_ocr library hardcodes its cache at ~/.cache/
+        # fast-plate-ocr/ and ignores any env override.  We:
+        #   1. Reset HOME to /root (paddle's fetcher above set it elsewhere,
+        #      which would have leaked the cache into the wrong directory),
+        #   2. Symlink ~/.cache/fast-plate-ocr → /opt/models/fast_plate_ocr
+        #      so the library's write lands inside the persistent volume
+        #      mount path, AND the on-disk file matches what `entrypoint.sh`
+        #      will symlink at runtime.
+        os.environ["HOME"] = "/root"
+        cache_root = Path("/root/.cache")
+        cache_root.mkdir(parents=True, exist_ok=True)
+        Path(FAST_BASE).mkdir(parents=True, exist_ok=True)
+        symlink = cache_root / "fast-plate-ocr"
+        if symlink.is_symlink():
+            symlink.unlink()
+        elif symlink.exists():
+            # Real dir from a previous (broken) build — move contents over.
+            for item in symlink.iterdir():
+                target = Path(FAST_BASE) / item.name
+                if not target.exists():
+                    shutil.move(str(item), str(target))
+            symlink.rmdir()
+        symlink.symlink_to(FAST_BASE)
+
         from fast_plate_ocr import LicensePlateRecognizer
         _ = LicensePlateRecognizer("cct-xs-v1-global-model")
-        print("✓ fast-plate-ocr weights cached")
+        print(f"✓ fast-plate-ocr weights cached at {FAST_BASE}")
     except Exception as e:    # noqa: BLE001
         print(f"WARN: fast-plate-ocr download failed: {e}")
         traceback.print_exc()

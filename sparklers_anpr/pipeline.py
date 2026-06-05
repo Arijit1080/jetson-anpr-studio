@@ -145,8 +145,17 @@ class PipelineRunner:
         (self.runs_dir / "frames").mkdir(parents=True, exist_ok=True)
         self._thread: Optional[threading.Thread] = None
         self._stop_event = threading.Event()
+        # Per-session pointers — populated by _build_pipeline, cleared by stop()
         self._pipeline: Optional[ALPRPipeline] = None
         self._vlm: Optional[VLMWorker] = None
+        # Process-level model singletons — survive across sessions so we don't
+        # pay the 5–10s reload cost on every /api/start.  Keyed on the bits of
+        # config that determine *which* model gets loaded; cache misses evict
+        # the old one before loading new (avoids GPU OOM on 8 GB Orin Nano).
+        self._cached_pipeline: Optional[ALPRPipeline] = None
+        self._cached_pipeline_key: Optional[tuple] = None
+        self._cached_vlm: Optional[VLMWorker] = None
+        self._cached_vlm_key: Optional[tuple] = None
         self._source: Optional[Source] = None
         self._latest_jpg: Optional[bytes] = None
         self._jpg_lock = threading.Lock()
@@ -196,6 +205,10 @@ class PipelineRunner:
         self._thread.start()
 
     def stop(self) -> None:
+        """End the current session.  The cached YOLO+OCR pipeline and the
+        cached VLM worker are NOT destroyed — they stay warm so the next
+        session starts in ~0s instead of ~8s.  Use `shutdown_models()` for
+        a full release (called from the FastAPI shutdown hook)."""
         self._stop_event.set()
         if self._thread is not None:
             self._thread.join(timeout=10.0)
@@ -203,14 +216,35 @@ class PipelineRunner:
         if self._source is not None:
             self._source.release()
         self._source = None
-        if self._vlm is not None:
-            self._vlm.stop()
-            self._vlm = None
+        # Just clear the per-session pointers — the underlying singletons
+        # live on under self._cached_pipeline / self._cached_vlm.
+        self._pipeline = None
+        self._vlm = None
         if self.status.session_id:
             self.store.end_session(self.status.session_id)
             self.bus.publish({"type": "session_ended",
                               "session_id": self.status.session_id})
         self.status.running = False
+
+    def shutdown_models(self) -> None:
+        """Fully release the cached models.  Called from the FastAPI
+        `shutdown` event so the process exits cleanly.  Don't call this
+        between sessions — that's what stop() is for."""
+        if self._cached_vlm is not None:
+            try:
+                self._cached_vlm.stop()
+            except Exception:    # noqa: BLE001
+                pass
+            self._cached_vlm = None
+            self._cached_vlm_key = None
+        self._cached_pipeline = None
+        self._cached_pipeline_key = None
+        try:
+            import gc; gc.collect()
+            import torch
+            torch.cuda.empty_cache()
+        except Exception:    # noqa: BLE001
+            pass
 
     def latest_jpg(self) -> Optional[bytes]:
         with self._jpg_lock:
@@ -236,18 +270,67 @@ class PipelineRunner:
         ocr_backend = base if base in ("fast", "easyocr", "paddle") else "fast"
         self._country_code = cfg.country
 
-        self._pipeline = ALPRPipeline(
-            detector_path=cfg.detector_path,
-            imgsz=cfg.imgsz,
-            det_conf=cfg.detector_conf,
-            ocr_backend=ocr_backend,
-            min_plate_area_px=cfg.min_plate_area_px,
-        )
+        # ----- YOLO+OCR pipeline: reuse if the config matches the cache -----
+        # Cache key includes only the inputs that affect which model gets
+        # loaded.  vote_frames / country / vlm_* don't change the loaded
+        # weights and so don't invalidate the cache.
+        pipe_key = (cfg.detector_path, cfg.imgsz, cfg.detector_conf,
+                    ocr_backend, cfg.min_plate_area_px)
+        if self._cached_pipeline_key != pipe_key:
+            if self._cached_pipeline is not None:
+                # Release old before loading new so we don't double-allocate
+                # GPU memory on the 8 GB Orin Nano.
+                self._cached_pipeline = None
+                try:
+                    import gc; gc.collect()
+                    import torch
+                    torch.cuda.empty_cache()
+                except Exception:    # noqa: BLE001
+                    pass
+            self._cached_pipeline = ALPRPipeline(
+                detector_path=cfg.detector_path,
+                imgsz=cfg.imgsz,
+                det_conf=cfg.detector_conf,
+                ocr_backend=ocr_backend,
+                min_plate_area_px=cfg.min_plate_area_px,
+            )
+            self._cached_pipeline_key = pipe_key
+        self._pipeline = self._cached_pipeline
+
+        # ----- VLM worker: reuse if model+device matches the cache -----
         if use_vlm:
-            self._vlm = VLMWorker(model_id=cfg.vlm_model, device=vlm_device)
-            self._vlm.start()
+            vlm_key = (cfg.vlm_model, vlm_device)
+            if self._cached_vlm_key != vlm_key:
+                # Different model or device requested → tear down old VLM
+                # first to free the ~1.5 GB it's holding on the GPU before
+                # loading a new one (Florence-2-base alone is ~270 MB on
+                # disk but balloons to ~1.4 GB once loaded to fp16 CUDA).
+                if self._cached_vlm is not None:
+                    try:
+                        self._cached_vlm.stop()
+                    except Exception:    # noqa: BLE001
+                        pass
+                    self._cached_vlm = None
+                    self._cached_vlm_key = None
+                    try:
+                        import gc; gc.collect()
+                        import torch
+                        torch.cuda.empty_cache()
+                    except Exception:    # noqa: BLE001
+                        pass
+                self._cached_vlm = VLMWorker(model_id=cfg.vlm_model,
+                                              device=vlm_device)
+                self._cached_vlm.start()
+                self._cached_vlm_key = vlm_key
+            else:
+                # Same VLM as last time → just clear its per-session result
+                # map so new track IDs aren't rejected as duplicates.
+                self._cached_vlm.reset_session()
+            self._vlm = self._cached_vlm
             self.status.vlm_device = vlm_device
         else:
+            # No VLM this session.  We keep the cached one in memory in case
+            # the next session re-enables it — avoids the ~8s reload.
             self._vlm = None
             self.status.vlm_device = ""
 

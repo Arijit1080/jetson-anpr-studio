@@ -144,7 +144,18 @@ RUN pip3 uninstall -y opencv-python opencv-python-headless opencv-contrib-python
 WORKDIR /app
 
 # alpr/ holds the YOLO+OCR pipeline (also the .pt weights for engine regen).
+#
+# We COPY twice on purpose:
+#   1. /app/alpr/   — primary location.  At runtime this is masked by the
+#                     `sparkler_alpr` named volume (declared in compose), so
+#                     compiled TRT engines persist across container recreate.
+#   2. /opt/alpr-src/ — pristine, never volume-masked.  entrypoint.sh syncs
+#                     the *.py code from here onto the volume on every start,
+#                     so an image upgrade actually delivers new code to users
+#                     who already have a populated volume.  Model files
+#                     (.pt/.engine) are NOT touched, preserving their cache.
 COPY alpr/ /app/alpr/
+COPY alpr/ /opt/alpr-src/
 
 # sparklers_anpr/ holds the FastAPI web UI.
 COPY sparklers_anpr/ /app/sparklers_anpr/

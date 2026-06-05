@@ -76,14 +76,54 @@ app.mount("/static", StaticFiles(directory=str(HERE / "static")), name="static")
 app.mount("/crops", StaticFiles(directory=str(CROPS)), name="crops")
 
 
+def _warmup_models():
+    """Preload the configured detector + OCR backend (and VLM if it's part
+    of the default backend) so the first /api/start doesn't pay the 5–10s
+    cold-load cost.  Runs in a background thread from the startup hook.
+
+    Cached models live on `runner._cached_pipeline` / `runner._cached_vlm`
+    and stay resident until the FastAPI shutdown hook.  Subsequent sessions
+    reuse them via `pipeline._build_pipeline()`'s cache check."""
+    print(f"[warmup] preloading for ocr_backend={config.pipeline.ocr_backend!r} …",
+          flush=True)
+    t0 = time.time()
+    try:
+        runner._build_pipeline(config.pipeline)
+        # One dummy detect so TRT JIT-compiles kernels + allocates streams.
+        import numpy as np
+        dummy = np.zeros((640, 640, 3), dtype=np.uint8)
+        try:
+            runner._pipeline.detector.predict(
+                dummy, imgsz=config.pipeline.imgsz, device=0,
+                half=runner._pipeline._is_engine, verbose=False,
+            )
+        except Exception as e:    # noqa: BLE001
+            print(f"[warmup] dummy detect failed (non-fatal): {e}", flush=True)
+        # Per-session pointers go back to None; cached singletons stay warm.
+        runner._pipeline = None
+        runner._vlm = None
+        print(f"[warmup] ready in {time.time() - t0:.1f}s", flush=True)
+    except Exception as e:    # noqa: BLE001
+        print(f"[warmup] failed (non-fatal): {e}", flush=True)
+
+
 @app.on_event("startup")
 async def _on_startup():
     bus.attach_loop(asyncio.get_event_loop())
+    # Kick the warmup off as a background task so FastAPI starts answering
+    # /healthz etc. immediately.  The first /api/start request will block
+    # waiting on the cache only if warmup hasn't finished yet — usually
+    # warmup is done in 10–15s, by which time the user hasn't even loaded
+    # the dashboard.
+    asyncio.get_event_loop().run_in_executor(None, _warmup_models)
 
 
 @app.on_event("shutdown")
 async def _on_shutdown():
     runner.stop()
+    # Release cached singletons (VLM thread + GPU memory).  Without this,
+    # the process can hang on exit waiting for the VLM thread.
+    runner.shutdown_models()
 
 
 # ---------- helpers --------------------------------------------------------

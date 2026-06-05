@@ -166,6 +166,22 @@ class VLMWorker:
     def pending_count(self) -> int:
         return self._q.qsize()
 
+    def reset_session(self) -> None:
+        """Clear per-session bookkeeping so the worker can be reused for a
+        new pipeline session without (a) leaking unbounded result memory or
+        (b) refusing a new submit because the synthetic id was used by a
+        previous session.  Safe to call on a running worker — the model
+        stays loaded in GPU memory; only the input/output maps reset."""
+        with self._lock:
+            self._results.clear()
+            self._submitted.clear()
+        # also drain any still-pending queue items from the previous session
+        while True:
+            try:
+                self._q.get_nowait()
+            except queue.Empty:
+                break
+
     # ----- worker -------------------------------------------------------------
 
     def _run(self) -> None:
