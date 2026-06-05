@@ -23,6 +23,7 @@ Built originally as a YouTube tutorial project. Now Dockerized for one-command i
 - **Persistent log** — SQLite-backed with searchable history, per-plate detail page, CSV / JSON / crop-zip export
 - **Multi-source input** — CSI (IMX219/IMX477), USB, RTSP/HTTP, image file, video file — all from the dashboard
 - **One-command install** via Docker, with auto-pulled prebuilt images
+- **Models stay warm across sessions** — the detector + OCR + Florence-2 VLM are preloaded at container boot (~6–15 s), then held as process-level singletons. Clicking *Start* a second time, or refreshing the dashboard and re-running, hits the cache instead of reloading the ~1.4 GB Florence-2 weights. First user request is fast; subsequent runs don't pay the cold-load tax.
 
 ---
 
@@ -313,6 +314,8 @@ docker compose up -d
 ```
 
 Your SQLite database, crops, and config survive (they're in named volumes, not the image).
+
+The `sparkler_alpr` volume normally masks the image's `/app/alpr/` directory so compiled TensorRT engines persist across upgrades — but that would also pin your code at the old version. The entrypoint sidesteps this by keeping a pristine copy of the ALPR Python sources at `/opt/alpr-src/` (never volume-masked) and syncing the `*.py` files onto the volume on every container start. **Result: new Python code lands on every upgrade; model weights and `.engine` files stay cached.** No manual `docker volume rm` ever needed.
 
 ### Roll back
 
